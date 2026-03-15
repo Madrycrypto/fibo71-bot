@@ -1,0 +1,76 @@
+{
+  "trading": {
+    "symbol": "AUDUSD",
+    "timeframe": "H1",
+    "magic_number": 710071
+  },
+  "risk": {
+    "risk_percent": 1.0,
+    "correlated_risk_percent": 0.5,
+    "max_daily_trades": 3,
+    "max_open_positions": 2
+  },
+  "strategy": {
+    "entry_zone": "71-79",
+    "entry_zones": {
+      "aggressive": {
+        "min": 0.38,
+        "max": 0.50,
+        "description": "Best for: USDJPY, USDCAD, EURUSD",
+        "avg_pf": 1.53
+      },
+      "balanced": {
+        "min": 0.50,
+        "max": 0.62,
+        "description": "Neutral results, mixed performance",
+        "avg_pf": 0.96
+      },
+      "conservative": {
+        "min": 0.62,
+        "max": 0.71,
+        "description": "Conservative, fewer signals",
+        "avg_pf": 0.88
+      },
+      "cp20_original": {
+        "min": 0.71,
+        "max": 0.79,
+        "description": "Best for: AUDUSD (PF 2.48), NZDUSD, GBPUSD",
+        "avg_pf": 1.31
+      }
+    },
+    "fib_tp": 0.0,
+    "fib_sl": 1.0,
+    "bos_lookback": 50,
+    "min_range_pips": 30
+  },
+  "filters": {
+    "enable_imbalance": false,
+    "enable_liquidity_sweep": false,
+    "trading_hours": {
+      "start": "08:00",
+      "end": "20:00"
+    }
+  },
+  "telegram": {
+    "enabled": false,
+    "bot_token": "YOUR_BOT_TOKEN",
+    "chat_id": "YOUR_CHAT_ID"
+  },
+  "_recommendations": {
+    "H1_day_trading": {
+      "best_pair": "AUDUSD",
+      "best_zone": "71-79%",
+      "profit_factor": 2.48,
+      "win_rate": "46.7%",
+      "alternative_pairs": ["USDJPY (PF 2.10)", "USDCAD (PF 1.63)"]
+    },
+    "D1_swing_trading": {
+      "best_pair": "EURUSD",
+      "best_zone": "38-50%",
+      "profit_factor": 3.01,
+      "win_rate": "75.0%",
+      "alternative_pairs": ["GBPUSD (PF 999)", "NZDUSD (PF 1.91)"]
+    },
+    "notes": "Based on ~2 years backtest (2024-03 to 2026-03). Past performance does not guarantee future results."
+  }
+}

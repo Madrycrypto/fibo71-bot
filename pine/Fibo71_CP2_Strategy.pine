@@ -1,0 +1,266 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Fibo71 Bot - CP 2.0 Strategy
+
+//@version=5
+indicator("Fibo 71 CP 2.0 - BOS + Imbalance", overlay=true, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Fibonacci Settings
+fibEntryMin = input.float(0.71, "Fib Entry Min", minval=0.5, maxval=0.95, step=0.01, group="Fibonacci")
+fibEntryMax = input.float(0.79, "Fib Entry Max", minval=0.5, maxval=0.95, step=0.01, group="Fibonacci")
+
+// BOS Settings
+bosLookback = input.int(50, "BOS Lookback", minval=10, maxval=200, group="BOS Detection")
+minImbalancePips = input.float(10.0, "Min Imbalance (pips)", minval=1, group="BOS Detection")
+
+// Filters
+enableImbalance = input.bool(true, "Require Imbalance", group="Filters")
+enableLiquiditySweep = input.bool(true, "Require Liquidity Sweep", group="Filters")
+
+// Display Settings
+showSwingPoints = input.bool(true, "Show Swing Points", group="Display")
+showFibLines = input.bool(true, "Show Fibonacci Lines", group="Display")
+showLabels = input.bool(true, "Show Labels", group="Display")
+showEntryZone = input.bool(true, "Show Entry Zone", group="Display")
+
+// Colors
+colorBullish = input.color(color.green, "Bullish Color", group="Colors")
+colorBearish = input.color(color.red, "Bearish Color", group="Colors")
+colorEntryZone = input.color(color.new(color.blue, 80), "Entry Zone Color", group="Colors")
+colorFib0 = input.color(color.lime, "Fib 0% (TP)", group="Colors")
+colorFib100 = input.color(color.red, "Fib 100% (SL)", group="Colors")
+colorImbalance = input.color(color.new(color.purple, 70), "Imbalance Zone", group="Colors")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GLOBAL VARIABLES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var float swingHigh = na
+var float swingLow = na
+var int swingHighIdx = na
+var int swingLowIdx = na
+var bool bullishBOS = false
+var bool bearishBOS = false
+var bool bullishBOSConfirmed = false
+var bool bearishBOSConfirmed = false
+var float imbStart = na
+var float imbEnd = na
+var bool liquiditySweep = false
+
+// Fibonacci levels
+var float fib0 = na      // TP
+var float fib71 = na     // Entry zone start
+var float fib75 = na     // Entry zone middle
+var float fib79 = na     // Entry zone end
+var float fib100 = na    // SL
+
+// Lines
+var line lineFib0 = na
+var line lineFib71 = na
+var line lineFib75 = na
+var line lineFib79 = na
+var line lineFib100 = na
+var line lineEntryZoneTop = na
+var line lineEntryZoneBottom = na
+var box imbalanceBox = na
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SWING POINT DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Find swing high (higher than 2 candles on each side)
+isSwingHigh = high[2] < high[1] and high[1] < high and high > high[1] and high[1] > high[2]
+isSwingLow = low[2] > low[1] and low[1] > low and low < low[1] and low[1] < low[2]
+
+if isSwingHigh
+    swingHigh := high
+    swingHighIdx := bar_index
+
+if isSwingLow
+    swingLow := low
+    swingLowIdx := bar_index
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BREAK OF STRUCTURE (BOS) DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Bearish BOS: price closes below previous swing low
+bearishBOS := not na(swingLow) and close < swingLow and bar_index - swingLowIdx <= bosLookback
+
+// Bullish BOS: price closes above previous swing high
+bullishBOS := not na(swingHigh) and close > swingHigh and bar_index - swingHighIdx <= bosLookback
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMBALANCE (IPA) DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Imbalance = gap between candle 1 and candle 3 in impulsive move
+// For bearish: gap between candle 1 low and candle 3 high
+// For bullish: gap between candle 1 high and candle 3 low
+
+pipMultiplier = syminfo.mintick * 10  // Approximate pip size
+
+bearishImbalance = low[2] > high and (low[2] - high) >= minImbalancePips * pipMultiplier
+bullishImbalance = high[2] < low and (low - high[2]) >= minImbalancePips * pipMultiplier
+
+if bearishBOS and bearishImbalance and enableImbalance
+    imbStart := low[2]
+    imbEnd := high
+    bearishBOSConfirmed := true
+    bullishBOSConfirmed := false
+else if bullishBOS and bullishImbalance and enableImbalance
+    imbStart := high[2]
+    imbEnd := low
+    bullishBOSConfirmed := true
+    bearishBOSConfirmed := false
+else if bearishBOS and not enableImbalance
+    bearishBOSConfirmed := true
+    bullishBOSConfirmed := false
+else if bullishBOS and not enableImbalance
+    bullishBOSConfirmed := true
+    bearishBOSConfirmed := false
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIQUIDITY SWEEP DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Look for false breakout in the 5 candles before BOS
+lookbackSweep = 5
+
+if bearishBOSConfirmed
+    for i = 1 to lookbackSweep
+        if high[i] > swingHigh and close[i] < swingHigh
+            liquiditySweep := true
+            break
+
+if bullishBOSConfirmed
+    for i = 1 to lookbackSweep
+        if low[i] < swingLow and close[i] > swingLow
+            liquiditySweep := true
+            break
+
+// Apply liquidity sweep filter
+if enableLiquiditySweep and not liquiditySweep
+    bearishBOSConfirmed := false
+    bullishBOSConfirmed := false
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIBONACCI LEVEL CALCULATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+if bearishBOSConfirmed
+    // Bearish: swingHigh is start (100%), swingLow is end (0%)
+    fib0 := swingLow
+    fib100 := swingHigh
+    fib71 := swingLow + (swingHigh - swingLow) * fibEntryMin
+    fib75 := swingLow + (swingHigh - swingLow) * 0.75
+    fib79 := swingLow + (swingHigh - swingLow) * fibEntryMax
+
+if bullishBOSConfirmed
+    // Bullish: swingLow is start (100%), swingHigh is end (0%)
+    fib0 := swingHigh
+    fib100 := swingLow
+    fib71 := swingHigh - (swingHigh - swingLow) * fibEntryMin
+    fib75 := swingHigh - (swingHigh - swingLow) * 0.75
+    fib79 := swingHigh - (swingHigh - swingLow) * fibEntryMax
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DRAW FIBONACCI LINES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+if showFibLines and (bullishBOSConfirmed or bearishBOSConfirmed)
+    // Delete old lines
+    line.delete(lineFib0)
+    line.delete(lineFib71)
+    line.delete(lineFib75)
+    line.delete(lineFib79)
+    line.delete(lineFib100)
+    line.delete(lineEntryZoneTop)
+    line.delete(lineEntryZoneBottom)
+    box.delete(imbalanceBox)
+
+    // Create new lines extending to the right
+    lineFib0 := line.new(bar_index, fib0, bar_index + 50, fib0, color=colorFib0, width=2, style=line.style_solid, extend=extend.right)
+    lineFib71 := line.new(bar_index, fib71, bar_index + 50, fib71, color=color.new(color.blue, 50), width=1, style=line.style_dashed, extend=extend.right)
+    lineFib75 := line.new(bar_index, fib75, bar_index + 50, fib75, color=color.new(color.blue, 30), width=1, style=line.style_solid, extend=extend.right)
+    lineFib79 := line.new(bar_index, fib79, bar_index + 50, fib79, color=color.new(color.blue, 50), width=1, style=line.style_dashed, extend=extend.right)
+    lineFib100 := line.new(bar_index, fib100, bar_index + 50, fib100, color=colorFib100, width=2, style=line.style_solid, extend=extend.right)
+
+    // Entry zone
+    if showEntryZone
+        bgColor = bearishBOSConfirmed ? color.new(color.red, 85) : color.new(color.green, 85)
+        lineEntryZoneTop := line.new(bar_index, fib71, bar_index + 50, fib71, color=bgColor, width=1, style=line.style_solid, extend=extend.right)
+        lineEntryZoneBottom := line.new(bar_index, fib79, bar_index + 50, fib79, color=bgColor, width=1, style=line.style_solid, extend=extend.right)
+
+    // Imbalance zone
+    if enableImbalance and not na(imbStart) and not na(imbEnd)
+        imbalanceBox := box.new(bar_index - 3, imbStart, bar_index + 1, imbEnd, bgcolor=colorImbalance, border_color=color.purple)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DRAW SWING POINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+if showSwingPoints
+    if isSwingHigh
+        label.new(bar_index, high, "HH", color=color.new(color.red, 50), textcolor=color.white, style=label.style_label_down, size=size.tiny)
+    if isSwingLow
+        label.new(bar_index, low, "LL", color=color.new(color.green, 50), textcolor=color.white, style=label.style_label_up, size=size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DRAW BOS LABELS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+if showLabels
+    if bearishBOSConfirmed
+        labelText = "🔴 BEARISH BOS\nTP: " + str.tostring(fib0, "#.#####") + "\nEntry: " + str.tostring(fib71, "#.#####") + " - " + str.tostring(fib79, "#.#####") + "\nSL: " + str.tostring(fib100, "#.#####")
+        label.new(bar_index, high, labelText, color=color.new(color.red, 30), textcolor=color.white, style=label.style_label_down, size=size.small)
+
+    if bullishBOSConfirmed
+        labelText = "🟢 BULLISH BOS\nTP: " + str.tostring(fib0, "#.#####") + "\nEntry: " + str.tostring(fib79, "#.#####") + " - " + str.tostring(fib71, "#.#####") + "\nSL: " + str.tostring(fib100, "#.#####")
+        label.new(bar_index, low, labelText, color=color.new(color.green, 30), textcolor=color.white, style=label.style_label_up, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+if bearishBOSConfirmed
+    alert("🔴 BEARISH BOS detected on " + syminfo.ticker + "\nEntry Zone: " + str.tostring(fib71, "#.#####") + " - " + str.tostring(fib79, "#.#####") + "\nTP: " + str.tostring(fib0, "#.#####") + " | SL: " + str.tostring(fib100, "#.#####"), alert.freq_once_per_bar_close)
+
+if bullishBOSConfirmed
+    alert("🟢 BULLISH BOS detected on " + syminfo.ticker + "\nEntry Zone: " + str.tostring(fib79, "#.#####") + " - " + str.tostring(fib71, "#.#####") + "\nTP: " + str.tostring(fib0, "#.#####") + " | SL: " + str.tostring(fib100, "#.#####"), alert.freq_once_per_bar_close)
+
+// Price in entry zone alert
+inEntryZoneSell = bearishBOSConfirmed and close >= fib79 and close <= fib71
+inEntryZoneBuy = bullishBOSConfirmed and close <= fib71 and close >= fib79
+
+if inEntryZoneSell or inEntryZoneBuy
+    alert("📍 Price in Entry Zone on " + syminfo.ticker + " | Price: " + str.tostring(close, "#.#####"), alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INFO TABLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var table infoTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80), border_width=1)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "CP 2.0 Status", text_color=color.white, bgcolor=color.new(color.blue, 60))
+    table.cell(infoTable, 1, 0, bullishBOSConfirmed ? "🟢 BULLISH" : bearishBOSConfirmed ? "🔴 BEARISH" : "⚪ NEUTRAL", text_color=color.white)
+
+    if bullishBOSConfirmed or bearishBOSConfirmed
+        table.cell(infoTable, 0, 1, "TP (0%)", text_color=color.lime)
+        table.cell(infoTable, 1, 1, str.tostring(fib0, "#.#####"), text_color=color.lime)
+
+        table.cell(infoTable, 0, 2, "Entry Zone", text_color=color.blue)
+        table.cell(infoTable, 1, 2, str.tostring(fib71, "#.#####") + " - " + str.tostring(fib79, "#.#####"), text_color=color.blue)
+
+        table.cell(infoTable, 0, 3, "SL (100%)", text_color=color.red)
+        table.cell(infoTable, 1, 3, str.tostring(fib100, "#.#####"), text_color=color.red)
+
+        table.cell(infoTable, 0, 4, "Current Price", text_color=color.white)
+        table.cell(infoTable, 1, 4, str.tostring(close, "#.#####"), text_color=color.white)
+
+        table.cell(infoTable, 0, 5, "Liq Sweep", text_color=color.white)
+        table.cell(infoTable, 1, 5, liquiditySweep ? "✅" : "❌", text_color=color.white)
