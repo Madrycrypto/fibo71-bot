@@ -11,15 +11,21 @@
   "bms": {
     "swing_lookback": 5,
     "momentum_candles": 3,
-    "body_threshold": 0.60
+    "body_threshold": 0.60,
     "distance_atr": 0.5
   },
   "fibonacci": {
-    "entry_min": 0.62
+    "entry_min": 0.62,
     "entry_max": 0.71
   },
+  "grid": {
+    "enabled": true,
+    "orders_count": 5,
+    "spacing_mode": "equal",
+    "entry_distribution": "equal"
+  },
   "liquidity_sweep": {
-    "min_wick_ratio": 2.0
+    "min_wick_ratio": 2.0,
     "ideal_wick_ratio": 3.0
   },
   "confirmation": {
@@ -34,11 +40,17 @@
     "enable_volatility": true,
     "enable_rr": true,
     "ema_fast": 50,
-    "ema_slow": 200
-    "volume_lookback": 20
+    "ema_slow": 200,
+    "volume_lookback": 20,
     "min_rr_ratio": 2.0
   },
+  "extremum": {
+    "min_candles": 1,
+    "timeout_candles": 50
+  },
   "telegram": {
-    "enabled": false
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": ""
   }
 }

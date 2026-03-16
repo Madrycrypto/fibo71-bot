@@ -14,46 +14,50 @@ from loguru import logger
 def load_config(config_path: Path) -> dict:
     """Load and validate configuration from JSON file."""
     if not config_path.exists():
-        logger.warning(f"Config file not found: {config_path},        logger.info("Using default configuration")
-        config = get_default_config()
+        logger.warning(f"Config file not found: {config_path}")
+        logger.info("Using default configuration")
+        return get_default_config()
 
-    # Validate required fields
-    required_fields = ['trading', 'bms', 'fibonacci', 'liquidity_sweep', 'confirmation', 'sl']
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in config file: {e}")
+        logger.info("Using default configuration")
+        return get_default_config()
 
-    for section in required_fields:
-        if missing:
-            logger.warning(f"Missing required field: {section} in config: {key}")
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config[section] = config[section]
-        else:
-            config['filters'].get('enable_trend', True
-        if 'filters' not in config['filters']:
-            config['filters']['enable_trend'] = True
-        else:
-            config['filters']['enable_trend'] = False
+    # Validate required sections
+    required_sections = ['trading', 'bms', 'fibonacci', 'liquidity_sweep', 'confirmation', 'sl']
 
-    # Validate optional fields
-    if 'telegram' not in config['telegram']:
-        config['telegram'] = {}
-    if 'telegram' not in config['telegram']:
-        config['telegram'] = {
-            'enabled': False,
-        }
+    for section in required_sections:
+        if section not in config:
+            logger.warning(f"Missing required section: {section}, using defaults")
+            config[section] = get_default_config().get(section, {})
+
+    # Validate filters section
+    if 'filters' not in config:
+        config['filters'] = get_default_config()['filters']
+    else:
+        # Ensure all filter settings exist
+        default_filters = get_default_config()['filters']
+        for key, value in default_filters.items():
+            if key not in config['filters']:
+                config['filters'][key] = value
+
+    # Validate extremum section
+    if 'extremum' not in config:
+        config['extremum'] = get_default_config()['extremum']
+
+    # Validate telegram section
+    if 'telegram' not in config:
+        config['telegram'] = {'enabled': False, 'bot_token': '', 'chat_id': ''}
+    else:
+        if 'enabled' not in config['telegram']:
+            config['telegram']['enabled'] = False
+        if 'bot_token' not in config['telegram']:
+            config['telegram']['bot_token'] = ''
+        if 'chat_id' not in config['telegram']:
+            config['telegram']['chat_id'] = ''
 
     return config
 
@@ -92,15 +96,21 @@ def get_default_config() -> dict:
         },
         'filters': {
             'enable_trend': True,
-            'enable_volume': True
-            'enable_volatility': True
-            'enable_rr': True
-            'ema_fast': 50
-            'ema_slow': 200
-            'volume_lookback': 20
+            'enable_volume': True,
+            'enable_volatility': True,
+            'enable_rr': True,
+            'ema_fast': 50,
+            'ema_slow': 200,
+            'volume_lookback': 20,
             'min_rr_ratio': 2.0
         },
+        'extremum': {
+            'min_candles': 1,
+            'timeout_candles': 50
+        },
         'telegram': {
-            'enabled': False
+            'enabled': False,
+            'bot_token': '',
+            'chat_id': ''
         }
     }

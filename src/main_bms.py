@@ -37,6 +37,12 @@ def get_default_config():
         'risk': {'risk_percent': 1.0, 'max_daily_trades': 3},
         'bms': {'swing_lookback': 5, 'momentum_candles': 3, 'body_threshold': 0.60, 'distance_atr': 0.5},
         'fibonacci': {'entry_min': 0.62, 'entry_max': 0.71},
+        'grid': {
+            'enabled': True,
+            'orders_count': 5,
+            'spacing_mode': 'equal',
+            'entry_distribution': 'equal'
+        },
         'liquidity_sweep': {'min_wick_ratio': 2.0, 'ideal_wick_ratio': 3.0},
         'confirmation': {'body_percent': 0.50},
         'sl': {'buffer_percent': 0.1},
@@ -67,6 +73,12 @@ def get_mock_data(symbol, bars=200):
 
 
 def create_strategy(config):
+    # Get grid settings with    grid_config = config.get('grid', {})
+    enable_grid = grid_config.get('enabled', False)
+    grid_orders_count = grid_config.get('orders_count', 5)
+    grid_spacing = grid_config.get('spacing_mode', 'equal')
+    grid_distribution = grid_config.get('entry_distribution', 'equal')
+
     return BMSFiboLiquidityStrategy(
         symbol=config['trading']['symbol'],
         timeframe=config['trading']['timeframe'],
@@ -89,8 +101,13 @@ def create_strategy(config):
         ema_fast=config['filters']['ema_fast'],
         ema_slow=config['filters']['ema_slow'],
         volume_lookback=config['filters']['volume_lookback'],
-        min_rr_ratio=config['filters']['min_rr_ratio']
- )
+        min_rr_ratio=config['filters']['min_rr_ratio'],
+        # Grid settings
+        enable_grid=enable_grid,
+        grid_orders_count=grid_orders_count,
+        grid_spacing_mode=grid_spacing,
+        grid_distribution=grid_distribution
+    )
 
 
 def run_backtest(config):
