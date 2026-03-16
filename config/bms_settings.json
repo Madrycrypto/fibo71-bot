@@ -1,0 +1,43 @@
+{
+  "trading": {
+    "symbol": "BTCUSDT",
+    "timeframe": "M15",
+    "magic_number": 710072
+  },
+  "risk": {
+    "risk_percent": 1.0,
+    "max_daily_trades": 3
+  },
+  "bms": {
+    "swing_lookback": 5,
+    "momentum_candles": 3,
+    "body_threshold": 0.60
+    "distance_atr": 0.5
+  },
+  "fibonacci": {
+    "entry_min": 0.62
+    "entry_max": 0.71
+  },
+    "min_wick_ratio": 2.0
+    "ideal_wick_ratio": 3.0
+  },
+  "confirmation": {
+    "body_percent": 0.50
+  },
+  "sl": {
+    "buffer_percent": 0.1
+  },
+  "filters": {
+    "enable_trend": true,
+    "enable_volume": true,
+    "enable_volatility": true,
+    "enable_rr": true,
+    "ema_fast": 50,
+    "ema_slow": 200
+    "volume_lookback": 20
+    "min_rr_ratio": 2.0
+  },
+  "telegram": {
+    "enabled": false
+  }
+}
