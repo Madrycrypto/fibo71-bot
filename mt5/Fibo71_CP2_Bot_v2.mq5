@@ -1,11 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                          Fibo71_CP2_Bot.mq5          |
-//|                                    CP 2.0 Strategy - MT5 Bot               |
-//|                                     Break of Structure + Fibo               |
+//|                                          Fibo71_CP2_Bot.mq5       |
+//|                                    CP 2.0 Strategy - MT5 Bot      |
+//|                                     Break of Structure + Fibo      |
+//|                                        WITH GRID ORDERS           |
 //+------------------------------------------------------------------+
 #property copyright "Fibo71 Bot"
 #property link      ""
-#property version   "2.00"
+#property version   "2.10"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -18,8 +19,8 @@
 
 // Basic Settings
 input string   Section1 = "═════════ Basic Settings ════════";
-input string   Symbol = "AUDUSD";                    // Trading Symbol
-input ENUM_TIMEFRAMES Timeframe = PERIOD_H1;         // Trading Timeframe
+// Symbol is AUTO-DETECTED from chart! No need to set manually.
+input ENUM_TIMEFRAMES Timeframe = PERIOD_CURRENT;    // Trading Timeframe (use chart TF)
 input int      MagicNumber = 710071;                 // Magic Number
 input string   TradeComment = "Fibo71 CP2.0";        // Trade Comment
 
@@ -28,12 +29,12 @@ input double   CorrelatedRiskPercent = 0.5;          // Risk on correlated pairs
 input int      MaxDailyTrades = 3;                   // Max trades per day
 input int      MaxOpenPositions = 2;                 // Max simultaneous positions
 
-input int      MaxSpreadPips = 10;                // Max spread (pips)
+input int      MaxSpreadPips = 10;                   // Max spread (pips)
 
 // Fibonacci Settings
 input string   Section2 = "═════════ Fibonacci Settings ════════";
-input double   FibEntryMin = 0.71;                   // Fib Entry Min (default 71%)
-input double   FibEntryMax = 0.79;                   // Fib Entry Max (default 79%)
+input double   FibEntryMin = 0.62;                   // Fib Entry Min (default 62%)
+input double   FibEntryMax = 0.71;                   // Fib Entry Max (default 71%)
 input double   FibTP = 1.0;                          // Fib TP Level (0%)
 input double   FibSL = 1.0;                          // Fib SL Level (100%)
 
@@ -42,6 +43,13 @@ input string   Section3 = "═════════ BOS Detection ═══�
 input int      BOSLookback = 50;                     // BOS Lookback Period
 input double   MinImbalancePips = 10.0;              // Min Imbalance (pips)
 
+// Grid Order Settings
+input string   SectionGrid = "═════════ Grid Orders ════════";
+input bool     EnableGridOrders = true;              // Enable Grid Orders
+input int      GridOrdersCount = 5;                  // Number of Grid Orders
+input string   GridSpacingMode = "equal";            // Spacing: equal, fib
+input string   GridDistribution = "equal";           // Distribution: equal, weighted
+
 // Filters
 input string   Section4 = "═════════ Filters ════════";
 input bool     EnableImbalance = true;               // Require Imbalance filter
@@ -49,15 +57,15 @@ input bool     EnableLiquiditySweep = true;          // Require Liquidity Sweep 
 input string   TradingHoursStart = "08:00";          // Trading Hours Start
 input string   TradingHoursEnd = "15:00";            // Trading Hours End
 
-input bool     EnableDailyClose = true;                 // Enable Daily Auto-Close
-input string   DailyCloseTime = "16:00";          // Daily Close Time (HH:MM)
-input double   PartialClosePercent = 50.0;         // Partial Close at % of profit
+input bool     EnableDailyClose = true;              // Enable Daily Auto-Close
+input string   DailyCloseTime = "16:00";             // Daily Close Time (HH:MM)
+input double   PartialClosePercent = 50.0;           // Partial Close at % of profit
 
 // Telegram Settings
 input string   Section5 = "═════════ Telegram Settings ════════";
 input bool     EnableTelegram = true;                // Enable Telegram
 input string   TelegramBotToken = "";                // Bot Token (from @BotFather)
-input string   TelegramChatID = "";                  // Chat ID (from @userinfobot)
+input string   TelegramChatID = "";                  // Chat ID (from userinfobot)
 
 // Display Settings
 input string   Section6 = "════════ Display Settings ════════";
@@ -71,8 +79,22 @@ input color    ColorEntry = clrBlue;                 // Entry Zone Color
 
 // Performance tracking
 input string   Section7 = "════════ Performance Tracking ════════";
-input bool     EnableMonthlyStats = true;              // Enable Monthly Statistics
+input bool     EnableMonthlyStats = true;            // Enable Monthly Statistics
 input bool     EnableLast10Stats = true;             // Enable Last 10 Trades Stats
+
+//+------------------------------------------------------------------+
+//| GRID ORDER STRUCTURE                                              |
+//+------------------------------------------------------------------+
+struct GridOrderStruct
+{
+    double fibLevel;        // Fibonacci level (0.62, 0.65, etc.)
+    double price;           // Actual price
+    double riskPercent;     // Risk % for this order
+    double lotSize;         // Position size
+    ulong  ticket;          // Order ticket (0 if not placed)
+    bool   isFilled;        // Whether order was filled
+    bool   isPending;       // Whether limit order is pending
+};
 
 //+------------------------------------------------------------------+
 //| GLOBAL VARIABLES                                                  |
@@ -81,6 +103,9 @@ input bool     EnableLast10Stats = true;             // Enable Last 10 Trades St
 CTrade trade;
 CPositionInfo positionInfo;
 CSymbolInfo symbolInfo;
+
+// Current symbol (auto-detected from chart)
+string ChartSymbol;
 
 // Swing points
 double swingHigh = 0;
@@ -101,10 +126,14 @@ bool liquiditySweep = false;
 
 // Fibonacci levels
 double fib0 = 1;     // TP
-double fib71 = 1;    // Entry zone start
-double fib75 = 1;    // Entry zone middle
-double fib79 = 1;    // Entry zone end
+double fib62 = 1;    // Entry zone start
+double fib71 = 1;    // Entry zone end
 double fib100 = 1;   // SL
+
+// Grid orders
+GridOrderStruct gridOrders[];
+int filledGridOrders = 0;
+double totalGridRisk = 0;
 
 // Chart objects
 string prefix = "Fibo71_";
@@ -122,44 +151,77 @@ bool setupActive = false;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // Auto-detect symbol from chart
+    ChartSymbol = _Symbol;
+
+    // If Timeframe is PERIOD_CURRENT, use chart timeframe
+    ENUM_TIMEFRAMES chartTF = Timeframe;
+    if(chartTF == PERIOD_CURRENT)
+        chartTF = Period();
+
     // Initialize trade
     trade.SetExpertMagicNumber(MagicNumber);
     trade.SetDeviationInPoints(20);
     trade.SetTypeFilling(ORDER_FILLING_IOC);
 
     // Check symbol
-    if(!symbolInfo.Name(Symbol))
+    if(!symbolInfo.Name(ChartSymbol))
     {
-        Print("❌ Symbol not found: ", Symbol);
+        Print("Symbol not found: ", ChartSymbol);
         return INIT_FAILED;
     }
+
+    // Initialize grid orders array
+    ArrayResize(gridOrders, GridOrdersCount);
+    ResetGridOrders();
 
     // Check Telegram
     if(EnableTelegram && (TelegramBotToken == "" || TelegramChatID == ""))
     {
-        Print("⚠️ Telegram enabled but credentials missing");
+        Print("WARNING: Telegram enabled but credentials missing");
     }
 
     // Send startup notification
-    string message = "🚀 <b>Fibo 71 Bot Started</b>\n\n";
-    message += "Symbol: " + Symbol + "\n";
-    message += "Timeframe: " + EnumToString(Timeframe) + "\n";
+    string message = "Fibo 71 Bot Started v2.10\n\n";
+    message += "Symbol: " + ChartSymbol + "\n";
+    message += "Timeframe: " + EnumToString(chartTF) + "\n";
     message += "Risk: " + DoubleToString(RiskPercent, 1) + "%\n";
     message += "Entry Zone: " + DoubleToString(FibEntryMin * 100, 0) + "% - " + DoubleToString(FibEntryMax * 100, 0) + "%\n";
-    message += "\n⏰ " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
+    message += "Grid: " + (EnableGridOrders ? IntegerToString(GridOrdersCount) + " orders" : "Disabled") + "\n";
+    message += "\nTime: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
     SendTelegram(message);
 
-    Print("══════════════════════════════════════════════════");
-    Print("🤖 Fibo 71 Bot - CP 2.0 Strategy");
-    Print("══════════════════════════════════════════════════");
-    Print("Symbol: ", Symbol, " | Timeframe: ", EnumToString(Timeframe));
+    Print("========================================");
+    Print("Fibo 71 Bot - CP 2.0 Strategy v2.10");
+    Print("========================================");
+    Print("Symbol: ", ChartSymbol, " | Timeframe: ", EnumToString(chartTF));
     Print("Risk: ", RiskPercent, "% | Entry Zone: ", FibEntryMin * 100, "% - ", FibEntryMax * 100, "%");
+    Print("Grid Orders: ", EnableGridOrders ? IntegerToString(GridOrdersCount) + " orders" : "Disabled");
     Print("Filters: Imbalance = ", EnableImbalance ? "ON" : "OFF",
           " | Liquidity Sweep = ", EnableLiquiditySweep ? "ON" : "OFF");
     Print("Telegram: ", EnableTelegram ? "ENABLED" : "DISABLED");
-    Print("══════════════════════════════════════════════════");
+    Print("========================================");
 
     return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Reset Grid Orders                                                 |
+//+------------------------------------------------------------------+
+void ResetGridOrders()
+{
+    for(int i = 0; i < GridOrdersCount; i++)
+    {
+        gridOrders[i].fibLevel = 0;
+        gridOrders[i].price = 0;
+        gridOrders[i].riskPercent = 0;
+        gridOrders[i].lotSize = 0;
+        gridOrders[i].ticket = 0;
+        gridOrders[i].isFilled = false;
+        gridOrders[i].isPending = false;
+    }
+    filledGridOrders = 0;
+    totalGridRisk = 0;
 }
 
 //+------------------------------------------------------------------+
@@ -169,11 +231,12 @@ void OnTick()
 {
     // Check for new candle
     static datetime lastCandleTime = 0;
-    bool isNewCandle = (Time[0] != lastCandleTime);
+    datetime currentCandleTime = iTime(ChartSymbol, Period(), 0);
+    bool isNewCandle = (currentCandleTime != lastCandleTime);
 
     if(isNewCandle)
     {
-        lastCandleTime = Time[0];
+        lastCandleTime = currentCandleTime;
 
         // Analyze market
         AnalyzeMarket();
@@ -182,8 +245,12 @@ void OnTick()
         CheckTradeSetup();
     }
 
-    // Check pending order status
-    if(pendingTicket > 0)
+    // Check pending orders status
+    if(EnableGridOrders)
+    {
+        CheckGridOrderFills();
+    }
+    else if(pendingTicket > 0)
     {
         CheckPendingOrder();
     }
@@ -195,7 +262,7 @@ void OnTick()
 void AnalyzeMarket()
 {
     // Get historical data
-    int bars = iBars(Symbol, Timeframe);
+    int bars = iBars(ChartSymbol, Period());
     if(bars < BOSLookback + 10)
         return;
 
@@ -231,18 +298,16 @@ void AnalyzeMarket()
 //+------------------------------------------------------------------+
 void FindSwingPoints()
 {
-    double h_1 = iHigh(Symbol, Timeframe, 1);
-    double h_2 = iHigh(Symbol, Timeframe, 2);
-    double h = iHigh(Symbol, Timeframe, 0);
-    double l_1 = iLow(Symbol, Timeframe, 1);
-    double l_2 = iLow(Symbol, Timeframe, 2);
-    double l = iLow(Symbol, Timeframe, 0);
-
     // Look for swing high (higher than 2 candles on each side)
     for(int i = 2; i < BOSLookback - 2; i++)
     {
-        double h = iHigh(Symbol, Timeframe, i);
-        if(h > h_1 && h > h_2 && h > iHigh(Symbol, Timeframe, i + 1) && h > iHigh(Symbol, Timeframe, i + 2))
+        double h = iHigh(ChartSymbol, Period(), i);
+        double hPrev1 = iHigh(ChartSymbol, Period(), i - 1);
+        double hPrev2 = iHigh(ChartSymbol, Period(), i - 2);
+        double hNext1 = iHigh(ChartSymbol, Period(), i + 1);
+        double hNext2 = iHigh(ChartSymbol, Period(), i + 2);
+
+        if(h > hPrev1 && h > hPrev2 && h > hNext1 && h > hNext2)
         {
             swingHigh = h;
             swingHighIdx = i;
@@ -253,10 +318,15 @@ void FindSwingPoints()
     // Look for swing low (lower than 2 candles on each side)
     for(int i = 2; i < BOSLookback - 2; i++)
     {
-        double l = iLow(Symbol, Timeframe, i);
-        if(l < l_1 && l < l_2 && l < iLow(Symbol, Timeframe, i + 1) && l < iLow(Symbol, Timeframe, i + 2))
+        double lo = iLow(ChartSymbol, Period(), i);
+        double lPrev1 = iLow(ChartSymbol, Period(), i - 1);
+        double lPrev2 = iLow(ChartSymbol, Period(), i - 2);
+        double lNext1 = iLow(ChartSymbol, Period(), i + 1);
+        double lNext2 = iLow(ChartSymbol, Period(), i + 2);
+
+        if(lo < lPrev1 && lo < lPrev2 && lo < lNext1 && lo < lNext2)
         {
-            swingLow = l;
+            swingLow = lo;
             swingLowIdx = i;
             break;
         }
@@ -268,20 +338,20 @@ void FindSwingPoints()
 //+------------------------------------------------------------------+
 void DetectBOS()
 {
-    double close = iClose(Symbol, Timeframe, 0);
+    double close = iClose(ChartSymbol, Period(), 0);
 
     // Reset
     bullishBOS = false;
     bearishBOS = false;
 
     // Bearish BOS: close below swing low
-    if(swingLow > 0 && close < swingLow && (0 - swingLowIdx) <= BOSLookback)
+    if(swingLow > 0 && close < swingLow && swingLowIdx <= BOSLookback)
     {
         bearishBOS = true;
     }
 
     // Bullish BOS: close above swing high
-    if(swingHigh > 0 && close > swingHigh && (0 - swingHighIdx) <= BOSLookback)
+    if(swingHigh > 0 && close > swingHigh && swingHighIdx <= BOSLookback)
     {
         bullishBOS = true;
     }
@@ -296,19 +366,19 @@ void CheckFilters()
     bearishBOSConfirmed = false;
     liquiditySweep = false;
 
-    double point = SymbolInfoDouble(Symbol, SYMBOL_POINT);
+    double point = SymbolInfoDouble(ChartSymbol, SYMBOL_POINT);
     double minImbalancePrice = MinImbalancePips * point * 10;
 
     // Check for imbalance
     if(EnableImbalance)
     {
         // Bearish imbalance: gap between candle 2 low and current high
-        double low2 = iLow(Symbol, Timeframe, 2);
-        double high0 = iHigh(Symbol, Timeframe, 0);
+        double low2 = iLow(ChartSymbol, Period(), 2);
+        double high0 = iHigh(ChartSymbol, Period(), 0);
 
         // Bullish imbalance: gap between candle 2 high and current low
-        double high2 = iHigh(Symbol, Timeframe, 2);
-        double low0 = iLow(Symbol, Timeframe, 0);
+        double high2 = iHigh(ChartSymbol, Period(), 2);
+        double low0 = iLow(ChartSymbol, Period(), 0);
 
         if(bearishBOS && (low2 - high0) >= minImbalancePrice)
         {
@@ -336,8 +406,8 @@ void CheckFilters()
         {
             if(bearishBOSConfirmed)
             {
-                double h = iHigh(Symbol, Timeframe, i);
-                double c = iClose(Symbol, Timeframe, i);
+                double h = iHigh(ChartSymbol, Period(), i);
+                double c = iClose(ChartSymbol, Period(), i);
                 if(h > swingHigh && c < swingHigh)
                 {
                     liquiditySweep = true;
@@ -346,9 +416,9 @@ void CheckFilters()
             }
             else if(bullishBOSConfirmed)
             {
-                double l = iLow(Symbol, Timeframe, i);
-                double c = iClose(Symbol, Timeframe, i);
-                if(l < swingLow && c > swingLow)
+                double lo = iLow(ChartSymbol, Period(), i);
+                double c = iClose(ChartSymbol, Period(), i);
+                if(lo < swingLow && c > swingLow)
                 {
                     liquiditySweep = true;
                     break;
@@ -375,19 +445,110 @@ void CalculateFibonacci()
         // Bearish: swingHigh is start (100%), swingLow is end (0%)
         fib0 = swingLow;                          // TP
         fib100 = swingHigh;                       // SL
-        fib71 = swingLow + (swingHigh - swingLow) * FibEntryMin;
-        fib75 = swingLow + (swingHigh - swingLow) * 0.75;
-        fib79 = swingLow + (swingHigh - swingLow) * FibEntryMax;
+        fib62 = swingLow + (swingHigh - swingLow) * FibEntryMin;
+        fib71 = swingLow + (swingHigh - swingLow) * FibEntryMax;
     }
     else if(bullishBOSConfirmed)
     {
         // Bullish: swingLow is start (100%), swingHigh is end (0%)
         fib0 = swingHigh;                         // TP
         fib100 = swingLow;                        // SL
-        fib71 = swingHigh - (swingHigh - swingLow) * FibEntryMin;
-        fib75 = swingHigh - (swingHigh - swingLow) * 0.75;
-        fib79 = swingHigh - (swingHigh - swingLow) * FibEntryMax;
+        fib62 = swingHigh - (swingHigh - swingLow) * FibEntryMin;
+        fib71 = swingHigh - (swingHigh - swingLow) * FibEntryMax;
     }
+
+    // Calculate grid order levels if enabled
+    if(EnableGridOrders)
+    {
+        CalculateGridLevels();
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Grid Order Levels                                       |
+//+------------------------------------------------------------------+
+void CalculateGridLevels()
+{
+    double fibRange;
+    bool isBullish = bullishBOSConfirmed;
+
+    if(bearishBOSConfirmed)
+        fibRange = swingHigh - swingLow;
+    else
+        fibRange = swingHigh - swingLow;
+
+    // Distribute risk across orders
+    double riskPerOrder = RiskPercent / GridOrdersCount;
+    if(GridDistribution == "weighted")
+    {
+        // Weighted: more risk at better levels
+        double totalWeight = 0;
+        for(int i = 0; i < GridOrdersCount; i++)
+            totalWeight += 1.0 + (i * 0.2);
+        riskPerOrder = RiskPercent / totalWeight;
+    }
+
+    // Calculate levels based on spacing mode
+    for(int i = 0; i < GridOrdersCount; i++)
+    {
+        double level;
+
+        if(GridSpacingMode == "fib")
+        {
+            // Fibonacci spacing
+            double fibLevels[] = {0.382, 0.5, 0.618, 0.65, 0.70, 0.786};
+            if(i < ArraySize(fibLevels))
+                level = fibLevels[i];
+            else
+                level = FibEntryMin + (FibEntryMax - FibEntryMin) * i / (GridOrdersCount - 1);
+        }
+        else
+        {
+            // Equal spacing
+            level = FibEntryMin + (FibEntryMax - FibEntryMin) * i / (GridOrdersCount - 1);
+        }
+
+        gridOrders[i].fibLevel = level;
+
+        // Calculate price from fib level
+        if(bearishBOSConfirmed)
+            gridOrders[i].price = swingLow + fibRange * level;
+        else
+            gridOrders[i].price = swingHigh - fibRange * level;
+
+        // Calculate risk per order
+        if(GridDistribution == "weighted")
+            gridOrders[i].riskPercent = riskPerOrder * (1.0 + (i * 0.2));
+        else
+            gridOrders[i].riskPercent = RiskPercent / GridOrdersCount;
+
+        // Calculate lot size
+        gridOrders[i].lotSize = CalculateLotSizeForRisk(gridOrders[i].riskPercent);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Lot Size for Specific Risk                              |
+//+------------------------------------------------------------------+
+double CalculateLotSizeForRisk(double riskPct)
+{
+    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double risk = riskPct / 100.0 * balance;
+
+    double entryPrice = (fib62 + fib71) / 2;  // Middle of zone
+    double slPips = MathAbs(entryPrice - fib100) / SymbolInfoDouble(ChartSymbol, SYMBOL_POINT) / 10;
+    double pipValue = SymbolInfoDouble(ChartSymbol, SYMBOL_TRADE_TICK_VALUE);
+    double lotSize = risk / (slPips * pipValue);
+
+    // Normalize
+    double minLot = SymbolInfoDouble(ChartSymbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(ChartSymbol, SYMBOL_VOLUME_MAX);
+    double stepLot = SymbolInfoDouble(ChartSymbol, SYMBOL_VOLUME_STEP);
+
+    lotSize = MathFloor(lotSize / stepLot) * stepLot;
+    lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
+
+    return NormalizeDouble(lotSize, 2);
 }
 
 //+------------------------------------------------------------------+
@@ -401,37 +562,63 @@ void DrawFibonacciLines()
     // Delete old objects
     ObjectsDeleteAll(0, prefix);
 
-    datetime timeStart = Time[1];
-    datetime timeEnd = Time[1] + PeriodSeconds() * 50;
-
     color lineColor = bearishBOSConfirmed ? ColorBearish : ColorBullish;
 
     // Draw TP line (0%)
-    HLineCreate(0, prefix + "TP_0", 0, fib0, ColorTP, STYLE_SOLID, 2, "TP (0%)", true);
+    CreateHLine(prefix + "TP_0", fib0, ColorTP, 2, "TP (0%)");
 
     // Draw entry zone lines
-    HLineCreate(0, prefix + "Entry_71", 0, fib71, ColorEntry, STYLE_DASH, 1, "71%", true);
-    HLineCreate(0, prefix + "Entry_75", 0, fib75, ColorEntry, STYLE_SOLID, 1, "75%", true);
-    HLineCreate(0, prefix + "Entry_79", 0, fib79, ColorEntry, STYLE_DASH, 1, "79%", true);
+    CreateHLine(prefix + "Entry_62", fib62, ColorEntry, 1, "62%");
+    CreateHLine(prefix + "Entry_71", fib71, ColorEntry, 1, "71%");
+
+    // Draw grid order levels if enabled
+    if(EnableGridOrders && ShowLabels)
+    {
+        for(int i = 0; i < GridOrdersCount; i++)
+        {
+            string gridName = prefix + "Grid_" + IntegerToString(i);
+            CreateHLine(gridName, gridOrders[i].price, clrGray, 1,
+                       "Grid " + IntegerToString(i+1) + " @ " + DoubleToString(gridOrders[i].price, (int)SymbolInfoInteger(ChartSymbol, SYMBOL_DIGITS)));
+        }
+    }
 
     // Draw SL line (100%)
-    HLineCreate(0, prefix + "SL_100", 0, fib100, ColorSL, STYLE_SOLID, 2, "SL (100%)", true);
+    CreateHLine(prefix + "SL_100", fib100, ColorSL, 2, "SL (100%)");
 
     // Draw swing points
     if(ShowLabels)
     {
         string labelName = prefix + "SwingHigh";
-        ObjectCreate(0, labelName, OBJ_ARROW_DOWN, 0, Time[swingHighIdx], swingHigh);
+        datetime swingHighTime = iTime(ChartSymbol, Period(), swingHighIdx);
+        ObjectCreate(0, labelName, OBJ_ARROW_DOWN, 0, swingHighTime, swingHigh);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrRed);
         ObjectSetInteger(0, labelName, OBJPROP_WIDTH, 2);
 
         labelName = prefix + "SwingLow";
-        ObjectCreate(0, labelName, OBJ_ARROW_UP, 0, Time[swingLowIdx], swingLow);
+        datetime swingLowTime = iTime(ChartSymbol, Period(), swingLowIdx);
+        ObjectCreate(0, labelName, OBJ_ARROW_UP, 0, swingLowTime, swingLow);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrGreen);
         ObjectSetInteger(0, labelName, OBJPROP_WIDTH, 2);
     }
 
     ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| Create Horizontal Line Helper                                     |
+//+------------------------------------------------------------------+
+bool CreateHLine(string name, double price, color clr, int width, string tooltip)
+{
+    if(ObjectFind(0, name) < 0)
+        ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
+
+    ObjectSetDouble(0, name, OBJPROP_PRICE, price);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetString(0, name, OBJPROP_TOOLTIP, tooltip);
+
+    return true;
 }
 
 //+------------------------------------------------------------------+
@@ -448,27 +635,34 @@ void CheckTradeSetup()
         return;
 
     // Get current price
-    double currentPrice = SymbolInfo.Double(Symbol, SYMBOL_BID);
-    double point = SymbolInfoDouble(Symbol, SYMBOL_POINT);
+    double currentPrice = SymbolInfoDouble(ChartSymbol, SYMBOL_BID);
 
     // Check if price is in entry zone
     bool inEntryZone = false;
-    double entryPrice = fib75; // Use middle of zone
 
     if(bearishBOSConfirmed)
     {
         // For sell, price needs to retrace UP into entry zone
-        inEntryZone = (currentPrice >= fib79 && currentPrice <= fib71);
+        inEntryZone = (currentPrice >= fib71 && currentPrice <= fib62);
     }
     else if(bullishBOSConfirmed)
     {
         // For buy, price needs to retrace DOWN into entry zone
-        inEntryZone = (currentPrice <= fib71 && currentPrice >= fib79);
+        inEntryZone = (currentPrice <= fib62 && currentPrice >= fib71);
     }
 
-    if(inEntryZone && pendingTicket == 0)
+    if(inEntryZone)
     {
-        PlaceLimitOrder();
+        if(EnableGridOrders)
+        {
+            if(filledGridOrders == 0)
+                PlaceGridOrders();
+        }
+        else
+        {
+            if(pendingTicket == 0)
+                PlaceLimitOrder();
+        }
     }
 }
 
@@ -510,7 +704,7 @@ bool CanOpenTrade()
 }
 
 //+------------------------------------------------------------------+
-//| Place Limit Order                                                 |
+//| Place Single Limit Order                                          |
 //+------------------------------------------------------------------+
 void PlaceLimitOrder()
 {
@@ -521,14 +715,14 @@ void PlaceLimitOrder()
     if(bearishBOSConfirmed)
     {
         orderType = ORDER_TYPE_SELL_LIMIT;
-        entryPrice = fib75;  // Middle of entry zone
+        entryPrice = (fib62 + fib71) / 2;  // Middle of entry zone
         sl = fib100;
         tp = fib0;
     }
     else if(bullishBOSConfirmed)
     {
         orderType = ORDER_TYPE_BUY_LIMIT;
-        entryPrice = fib75;  // Middle of entry zone
+        entryPrice = (fib62 + fib71) / 2;  // Middle of entry zone
         sl = fib100;
         tp = fib0;
     }
@@ -538,43 +732,136 @@ void PlaceLimitOrder()
     }
 
     // Normalize prices
-    double point = SymbolInfoDouble(Symbol, SYMBOL_POINT);
-    int digits = (int)SymbolInfoInteger(Symbol, SYMBOL_DIGITS);
+    int symDigits = (int)SymbolInfoInteger(ChartSymbol, SYMBOL_DIGITS);
 
-    entryPrice = NormalizeDouble(entryPrice, digits);
-    sl = NormalizeDouble(sl, digits);
-    tp = NormalizeDouble(tp, digits);
+    entryPrice = NormalizeDouble(entryPrice, symDigits);
+    sl = NormalizeDouble(sl, symDigits);
+    tp = NormalizeDouble(tp, symDigits);
 
     // Place order
-    if(trade.OrderOpen(Symbol, orderType, lotSize, entryPrice, sl, tp, ORDER_TIME_GTC, 0, TradeComment))
+    if(trade.OrderOpen(ChartSymbol, orderType, lotSize, entryPrice, sl, tp, ORDER_TIME_GTC, 0, TradeComment))
     {
         pendingTicket = trade.ResultOrder();
         dailyTrades++;
 
-        string dirEmoji = bearishBOSConfirmed ? "🔴" : "🟢";
+        string dirEmoji = bearishBOSConfirmed ? "SELL" : "BUY";
         string dirText = bearishBOSConfirmed ? "SELL LIMIT" : "BUY LIMIT";
 
-        Print("✅ Order placed: ", dirText, " ", lotSize, " @ ", entryPrice);
+        Print("Order placed: ", dirText, " ", lotSize, " @ ", entryPrice);
 
         if(EnableTelegram)
         {
-            int digits = (int)SymbolInfoInteger(Symbol, SYMBOL_DIGITS);
-
-            string message = dirEmoji + " <b>Order Placed</b>\n\n";
-            message += "Symbol: " + Symbol + "\n";
+            string message = dirEmoji + " Order Placed\n\n";
+            message += "Symbol: " + ChartSymbol + "\n";
             message += "Type: " + dirText + "\n";
             message += "Lots: " + DoubleToString(lotSize, 2) + "\n";
-            message += "Entry: " + DoubleToString(entryPrice, digits) + "\n";
-            message += "SL: " + DoubleToString(sl, digits) + "\n";
-            message += "TP: " + DoubleToString(tp, digits) + "\n";
-            message += "\n⏰ " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
+            message += "Entry: " + DoubleToString(entryPrice, symDigits) + "\n";
+            message += "SL: " + DoubleToString(sl, symDigits) + "\n";
+            message += "TP: " + DoubleToString(tp, symDigits) + "\n";
+            message += "\nTime: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
 
             SendTelegram(message);
         }
     }
     else
     {
-        Print("❌ Order failed: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
+        Print("Order failed: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Place Grid Orders                                                 |
+//+------------------------------------------------------------------+
+void PlaceGridOrders()
+{
+    int symDigits = (int)SymbolInfoInteger(ChartSymbol, SYMBOL_DIGITS);
+    string dirText = bearishBOSConfirmed ? "SELL" : "BUY";
+    ENUM_ORDER_TYPE orderType = bearishBOSConfirmed ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
+
+    double sl = NormalizeDouble(fib100, symDigits);
+    double tp = NormalizeDouble(fib0, symDigits);
+
+    string message = "Grid Orders Placed\n\n";
+    message += "Symbol: " + ChartSymbol + "\n";
+    message += "Direction: " + dirText + "\n";
+    message += "Orders: " + IntegerToString(GridOrdersCount) + "\n\n";
+
+    int ordersPlaced = 0;
+
+    for(int i = 0; i < GridOrdersCount; i++)
+    {
+        double entryPrice = NormalizeDouble(gridOrders[i].price, symDigits);
+        double lotSize = gridOrders[i].lotSize;
+
+        if(lotSize <= 0)
+            continue;
+
+        if(trade.OrderOpen(ChartSymbol, orderType, lotSize, entryPrice, sl, tp, ORDER_TIME_GTC, 0, TradeComment + "_Grid" + IntegerToString(i)))
+        {
+            gridOrders[i].ticket = trade.ResultOrder();
+            gridOrders[i].isPending = true;
+            ordersPlaced++;
+
+            message += "Order " + IntegerToString(i+1) + ": " + DoubleToString(lotSize, 2) + " @ " + DoubleToString(entryPrice, symDigits) + "\n";
+
+            Print("Grid order ", i+1, " placed: ", lotSize, " @ ", entryPrice);
+        }
+        else
+        {
+            Print("Grid order ", i+1, " failed: ", trade.ResultRetcode());
+        }
+    }
+
+    dailyTrades++;
+
+    message += "\nSL: " + DoubleToString(sl, symDigits) + "\n";
+    message += "TP: " + DoubleToString(tp, symDigits) + "\n";
+    message += "Total Risk: " + DoubleToString(RiskPercent, 1) + "%\n";
+    message += "\nTime: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
+
+    if(EnableTelegram && ordersPlaced > 0)
+    {
+        SendTelegram(message);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Check Grid Order Fills                                            |
+//+------------------------------------------------------------------+
+void CheckGridOrderFills()
+{
+    for(int i = 0; i < GridOrdersCount; i++)
+    {
+        if(gridOrders[i].isPending && gridOrders[i].ticket > 0)
+        {
+            // Check if order was filled (now a position)
+            for(int j = PositionsTotal() - 1; j >= 0; j--)
+            {
+                if(positionInfo.SelectByIndex(j))
+                {
+                    if(positionInfo.Magic() == MagicNumber && positionInfo.Comment() == TradeComment + "_Grid" + IntegerToString(i))
+                    {
+                        gridOrders[i].isFilled = true;
+                        gridOrders[i].isPending = false;
+                        filledGridOrders++;
+                        totalGridRisk += gridOrders[i].riskPercent;
+
+                        Print("Grid order ", i+1, " filled @ ", positionInfo.EntryPrice());
+
+                        if(EnableTelegram)
+                        {
+                            string msg = "Grid Order Filled\n\n";
+                            msg += "Order: " + IntegerToString(i+1) + "/" + IntegerToString(GridOrdersCount) + "\n";
+                            msg += "Entry: " + DoubleToString(positionInfo.EntryPrice(), (int)SymbolInfoInteger(ChartSymbol, SYMBOL_DIGITS)) + "\n";
+                            msg += "Filled: " + IntegerToString(filledGridOrders) + "/" + IntegerToString(GridOrdersCount) + "\n";
+                            msg += "Risk Used: " + DoubleToString(totalGridRisk, 2) + "%";
+                            SendTelegram(msg);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -590,19 +877,6 @@ void CheckPendingOrder()
         setupActive = false;
         return;
     }
-
-    // Check if order was triggered (now a position)
-    for(int i = PositionsTotal() - 1; i >= 0; i--)
-    {
-        if(positionInfo.SelectByIndex(i))
-        {
-            if(positionInfo.Magic() == MagicNumber)
-            {
-                // Position opened from our pending order
-                // The TP/SL are already set, just monitor
-            }
-        }
-    }
 }
 
 //+------------------------------------------------------------------+
@@ -613,14 +887,15 @@ double CalculateLotSize()
     double balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double risk = RiskPercent / 100.0 * balance;
 
-    double slPips = MathAbs(fib75 - fib100) / SymbolInfoDouble(Symbol, SYMBOL_POINT) / 10;
-    double pipValue = SymbolInfoDouble(Symbol, SYMBOL_TRADE_TICK_VALUE);
+    double entryPrice = (fib62 + fib71) / 2;
+    double slPips = MathAbs(entryPrice - fib100) / SymbolInfoDouble(ChartSymbol, SYMBOL_POINT) / 10;
+    double pipValue = SymbolInfoDouble(ChartSymbol, SYMBOL_TRADE_TICK_VALUE);
     double lotSize = risk / (slPips * pipValue);
 
     // Normalize
-    double minLot = SymbolInfoDouble(Symbol, SYMBOL_VOLUME_MIN);
-    double maxLot = SymbolInfoDouble(Symbol, SYMBOL_VOLUME_MAX);
-    double stepLot = SymbolInfoDouble(Symbol, SYMBOL_VOLUME_STEP);
+    double minLot = SymbolInfoDouble(ChartSymbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(ChartSymbol, SYMBOL_VOLUME_MAX);
+    double stepLot = SymbolInfoDouble(ChartSymbol, SYMBOL_VOLUME_STEP);
 
     lotSize = MathFloor(lotSize / stepLot) * stepLot;
     lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
@@ -636,22 +911,22 @@ void SendSetupNotification()
     if(!EnableTelegram)
         return;
 
-    string dirEmoji = bearishBOSConfirmed ? "🔴" : "🟢";
     string dirText = bearishBOSConfirmed ? "BEARISH" : "BULLISH";
 
-    int digits = (int)SymbolInfoInteger(Symbol, SYMBOL_DIGITS);
+    int symDigits = (int)SymbolInfoInteger(ChartSymbol, SYMBOL_DIGITS);
 
-    string message = dirEmoji + " <b>BOS Detected</b>\n\n";
-    message += "Symbol: " + Symbol + "\n";
+    string message = dirText + " BOS Detected\n\n";
+    message += "Symbol: " + ChartSymbol + "\n";
     message += "Direction: " + dirText + "\n";
-    message += "\n<b>Fibonacci Levels:</b>\n";
-    message += "• TP (0%): " + DoubleToString(fib0, digits) + "\n";
-    message += "• Entry: " + DoubleToString(fib71, digits) + " - " + DoubleToString(fib79, digits) + "\n";
-    message += "• SL (100%): " + DoubleToString(fib100, digits) + "\n";
+    message += "\nFibonacci Levels:\n";
+    message += "TP (0%): " + DoubleToString(fib0, symDigits) + "\n";
+    message += "Entry: " + DoubleToString(fib62, symDigits) + " - " + DoubleToString(fib71, symDigits) + "\n";
+    message += "SL (100%): " + DoubleToString(fib100, symDigits) + "\n";
+    message += "\nGrid: " + (EnableGridOrders ? IntegerToString(GridOrdersCount) + " orders" : "Disabled") + "\n";
     message += "\nFilters:\n";
-    message += "• Imbalance: " + (EnableImbalance ? "✅" : "❌") + "\n";
-    message += "• Liq Sweep: " + (liquiditySweep ? "✅" : "❌") + "\n";
-    message += "\n⏰ " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
+    message += "Imbalance: " + (EnableImbalance ? "YES" : "NO") + "\n";
+    message += "Liq Sweep: " + (liquiditySweep ? "YES" : "NO") + "\n";
+    message += "\nTime: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
 
     SendTelegram(message);
 }
@@ -686,8 +961,8 @@ bool SendTelegram(string message)
     if(res == -1)
     {
         int errorCode = GetLastError();
-        Print("❌ Telegram error: ", errorCode, " - ", ErrorDescription(errorCode));
-        Print("⚠️ Make sure to add https://api.telegram.org to Tools > Options > Expert Advisors > Allow WebRequest");
+        Print("Telegram error: ", errorCode, " - ", ErrorDescription(errorCode));
+        Print("Make sure to add https://api.telegram.org to Tools > Options > Expert Advisors > Allow WebRequest");
         return false;
     }
 
@@ -695,12 +970,12 @@ bool SendTelegram(string message)
 
     if(StringFind(response, "\"ok\":true") >= 0)
     {
-        Print("✅ Telegram message sent");
+        Print("Telegram message sent");
         return true;
     }
     else
     {
-        Print("❌ Telegram failed: ", response);
+        Print("Telegram failed: ", response);
         return false;
     }
 }
@@ -736,3 +1011,4 @@ string URLEncode(string text)
 
     return result;
 }
+//+------------------------------------------------------------------+

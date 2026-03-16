@@ -9,9 +9,14 @@
  * 5. Wait for price to enter Fib zone (0.62-0.71)
  * 6. Detect liquidity sweep (wick >= 2x body)
  * 7. Wait for confirmation candle
- * 8. Check all filters → Enter trade
+ * 8. Check all filters → Enter trade (single or grid)
  *
  * Market: BTCUSDT | Timeframe: 15m
+ *
+ * Features:
+ * - Auto symbol detection from chart
+ * - Grid order support with configurable parameters
+ * - Telegram notifications for grid orders
  */
 
 using System;
@@ -19,7 +24,6 @@ using System.Collections.Generic;
 using System.Linq;
 using cAlgo;
 using BMSFiboLiquidity.Helpers;
-using BMSFiboLiquidity.Indicators;
 
 namespace BMSFiboLiquidity
 {
@@ -51,10 +55,6 @@ namespace BMSFiboLiquidity
     {
         #region Parameters
 
-        // Symbol & Timeframe
-        [Parameter("Symbol", DefaultValue = "BTCUSDT")]
-        public string TradeSymbol { get; set; } = "BTCUSDT";
-
         // BMS Settings
         [Parameter("Swing Lookback", DefaultValue = 5)]
         public int SwingLookback { get; set; } = 5;
@@ -69,10 +69,10 @@ namespace BMSFiboLiquidity
         public double DistanceAtrThreshold { get; set; } = 0.5;
 
         // Fibonacci Settings
-        [Parameter("Entry Min", DefaultValue = 0.62)]
+        [Parameter("Entry Zone Min", DefaultValue = 0.62)]
         public double EntryZoneMin { get; set; } = 0.62;
 
-        [Parameter("Entry Max", DefaultValue = 0.71)]
+        [Parameter("Entry Zone Max", DefaultValue = 0.71)]
         public double EntryZoneMax { get; set; } = 0.71;
 
         // Liquidity Sweep Settings
@@ -130,6 +130,19 @@ namespace BMSFiboLiquidity
         [Parameter("Max Daily Trades", DefaultValue = 3)]
         public int MaxDailyTrades { get; set; } = 3;
 
+        // Grid Order Settings
+        [Parameter("Enable Grid Orders", DefaultValue = true)]
+        public bool EnableGridOrders { get; set; } = true;
+
+        [Parameter("Grid Orders Count", DefaultValue = 5)]
+        public int GridOrdersCount { get; set; } = 5;
+
+        [Parameter("Grid Spacing Mode", DefaultValue = "equal")]
+        public string GridSpacingMode { get; set; } = "equal";
+
+        [Parameter("Grid Distribution Mode", DefaultValue = "equal")]
+        public string GridDistributionMode { get; set; } = "equal";
+
         // Telegram
         [Parameter("Enable Telegram", DefaultValue = false)]
         public bool EnableTelegram { get; set; } = false;
@@ -143,6 +156,9 @@ namespace BMSFiboLiquidity
         #endregion
 
         #region Private Fields
+
+        // Auto-detected from chart
+        private string _tradeSymbol;
 
         private StrategyState _state = StrategyState.Idle;
         private TradeDirection _bmsDirection;
@@ -170,6 +186,10 @@ namespace BMSFiboLiquidity
         private int _dailyTrades;
         private DateTime _lastTradeDate;
 
+        // Grid order management
+        private GridOrderManager _gridManager;
+        private int _filledGridOrders;
+
         // Components
         private TelegramClient _telegram;
 
@@ -178,17 +198,50 @@ namespace BMSFiboLiquidity
         [Output("State")]
         public string CurrentState => _state.ToString();
 
+        [Output("Symbol")]
+        public string TradeSymbolOutput => _tradeSymbol ?? SymbolName;
+
         protected override void OnStart()
         {
-            Print($"BMS Fibo Liquidity Bot initialized for {TradeSymbol}");
+            // Auto-detect symbol from chart
+            _tradeSymbol = SymbolName;
+
+            Print($"=== BMS Fibo Liquidity Bot v2.0 ===");
+            Print($"Symbol: {_tradeSymbol} (auto-detected from chart)");
+            Print($"Timeframe: {TimeFrame}");
             Print($"Algorithm: BMS → Track Extremum → Confirm → Fibonacci → Entry");
+            Print($"Grid Orders: {(EnableGridOrders ? $"Enabled ({GridOrdersCount} orders)" : "Disabled")}");
+            Print($"Entry Zone: {EntryZoneMin:F3} - {EntryZoneMax:F3}");
+
             _state = StrategyState.Idle;
+
+            // Initialize grid manager
+            if (EnableGridOrders)
+            {
+                var gridConfig = new GridConfig
+                {
+                    Enabled = EnableGridOrders,
+                    OrdersCount = GridOrdersCount,
+                    Spacing = GridSpacingMode.ToLower() == "fib" ? SpacingMode.Fibonacci :
+                              GridSpacingMode.ToLower() == "custom" ? SpacingMode.Custom : SpacingMode.Equal,
+                    Distribution = GridDistributionMode.ToLower() == "weighted" ? DistributionMode.Weighted : DistributionMode.Equal
+                };
+                _gridManager = new GridOrderManager(gridConfig);
+            }
 
             // Initialize Telegram
             if (EnableTelegram && !string.IsNullOrEmpty(BotToken) && !string.IsNullOrEmpty(ChatId))
             {
                 _telegram = new TelegramClient(BotToken, ChatId);
                 Print("Telegram notifications enabled");
+
+                // Send startup message
+                _telegram.SendMessage($"🤖 <b>BMS Fibo Bot Started</b>\n\n" +
+                                     $"📊 Symbol: {_tradeSymbol}\n" +
+                                     $"⏰ Timeframe: {TimeFrame}\n" +
+                                     $"📍 Entry Zone: {EntryZoneMin:F3} - {EntryZoneMax:F3}\n" +
+                                     $"🎲 Grid: {(EnableGridOrders ? $"{GridOrdersCount} orders" : "Disabled")}\n" +
+                                     $"💰 Risk: {RiskPercent}%");
             }
         }
 
@@ -234,6 +287,12 @@ namespace BMSFiboLiquidity
                 case StrategyState.SweepDetected:
                     CheckConfirmationCandle();
                     break;
+            }
+
+            // Check grid order fills if in trade with grid
+            if (_state == StrategyState.InTrade && EnableGridOrders && _gridManager != null)
+            {
+                CheckGridOrderFills();
             }
         }
 
@@ -284,7 +343,7 @@ namespace BMSFiboLiquidity
                 _candlesSinceBms = 0;
                 _state = StrategyState.BmsDetected;
 
-                Print($"BULLISH BMS detected at {swingHigh.Price:F5}, tracking extremum...");
+                Print($"🔼 BULLISH BMS detected at {swingHigh.Price:F5}, tracking extremum...");
                 return;
             }
 
@@ -319,7 +378,7 @@ namespace BMSFiboLiquidity
                 _candlesSinceBms = 0;
                 _state = StrategyState.BmsDetected;
 
-                Print($"BEARISH BMS detected at {swingLow.Price:F5}, tracking extremum...");
+                Print($"🔽 BEARISH BMS detected at {swingLow.Price:F5}, tracking extremum...");
                 return;
             }
         }
@@ -382,7 +441,7 @@ namespace BMSFiboLiquidity
                 {
                     confirmed = true;
                     _confirmedExtremum = _bestExtremumAfterBms;
-                    Print($"BULLISH extremum confirmed at {_confirmedExtremum:F5}");
+                    Print($"✅ BULLISH extremum confirmed at {_confirmedExtremum:F5}");
                 }
             }
             else
@@ -392,14 +451,14 @@ namespace BMSFiboLiquidity
                 {
                     confirmed = true;
                     _confirmedExtremum = _bestExtremumAfterBms;
-                    Print($"BEARISH extremum confirmed at {_confirmedExtremum:F5}");
+                    Print($"✅ BEARISH extremum confirmed at {_confirmedExtremum:F5}");
                 }
             }
 
             // Timeout check
             if (_candlesSinceBms > ExtremumTimeoutCandles)
             {
-                Print("Extremum tracking timeout, resetting to IDLE");
+                Print("⏱ Extremum tracking timeout, resetting to IDLE");
                 ResetState();
                 return;
             }
@@ -411,9 +470,15 @@ namespace BMSFiboLiquidity
             CalculateFibonacciLevels();
             _state = StrategyState.ExtremumConfirmed;
 
-            Print($"Fibonacci levels calculated:");
-            Print($"  Entry zone: {_entryZoneLow:F5} - {_entryZoneHigh:F5}");
-            Print($"  Fib 0.618: {_fibLevel618:F5}");
+            Print($"📐 Fibonacci levels calculated:");
+            Print($"   Entry zone: {_entryZoneLow:F5} - {_entryZoneHigh:F5}");
+            Print($"   Fib 0.618: {_fibLevel618:F5}");
+
+            // Send Telegram update
+            _telegram?.SendMessage($"📐 <b>Fibonacci Calculated</b>\n\n" +
+                                  $"{(_bmsDirection == TradeDirection.Bullish ? "🔼" : "🔽")} Direction: {_bmsDirection}\n" +
+                                  $"📍 Entry Zone: {_entryZoneLow:F5} - {_entryZoneHigh:F5}\n" +
+                                  $"🎯 Extremum: {_confirmedExtremum:F5}");
         }
 
         private void CheckFibZone()
@@ -422,7 +487,7 @@ namespace BMSFiboLiquidity
 
             if (currentClose >= _entryZoneLow && currentClose <= _entryZoneHigh)
             {
-                Print($"Price entered Fib zone: {currentClose:F5}");
+                Print($"📍 Price entered Fib zone: {currentClose:F5}");
                 _state = StrategyState.InFibZone;
             }
         }
@@ -468,7 +533,7 @@ namespace BMSFiboLiquidity
 
             if (wickRatio >= MinWickToBodyRatio)
             {
-                Print($"Liquidity sweep detected! Wick ratio: {wickRatio:F2}x");
+                Print($"💧 Liquidity sweep detected! Wick ratio: {wickRatio:F2}x");
                 _state = StrategyState.SweepDetected;
             }
         }
@@ -501,7 +566,7 @@ namespace BMSFiboLiquidity
             if (bodyPercent < ConfirmationBodyPercent)
                 return;
 
-            Print($"Confirmation candle: body {bodyPercent:P0} of range");
+            Print($"✅ Confirmation candle: body {bodyPercent:P0} of range");
 
             // Check filters
             if (!CheckAllFilters())
@@ -510,8 +575,181 @@ namespace BMSFiboLiquidity
                 return;
             }
 
-            // Execute trade
+            // Execute trade (single or grid)
             ExecuteTrade();
+        }
+
+        #endregion
+
+        #region Trade Execution
+
+        private void ExecuteTrade()
+        {
+            var direction = _bmsDirection == TradeDirection.Bullish ? TradeType.Buy : TradeType.Sell;
+            var entry = Bars.ClosePrices.Last();
+
+            // Calculate SL with buffer
+            double sl;
+            if (_bmsDirection == TradeDirection.Bullish)
+                sl = _fibLevel1 * (1 - SlBufferPercent / 100);
+            else
+                sl = _fibLevel1 * (1 + SlBufferPercent / 100);
+
+            double slDistance = Math.Abs(entry - sl);
+
+            if (EnableGridOrders && _gridManager != null)
+            {
+                ExecuteGridOrders(direction, sl, slDistance);
+            }
+            else
+            {
+                ExecuteSingleOrder(direction, entry, sl, slDistance);
+            }
+
+            _state = StrategyState.InTrade;
+            _dailyTrades++;
+        }
+
+        private void ExecuteSingleOrder(TradeType direction, double entry, double sl, double slDistance)
+        {
+            // Calculate lot size based on risk
+            var riskAmount = Account.Balance * RiskPercent / 100;
+            var lotSize = riskAmount / slDistance / Symbol.PipValue;
+            lotSize = Math.Round(lotSize, 2);
+            lotSize = Math.Max(Symbol.VolumeInUnitsMin, lotSize);
+
+            // Place order
+            var request = new MarketOrderRequest
+            {
+                SymbolName = _tradeSymbol,
+                TradeType = direction,
+                VolumeInUnits = lotSize,
+                StopLossInPrice = sl,
+                TakeProfitInPrice = _fibLevel0,
+                Label = "BMS_FIB_LIQUIDITY"
+            };
+
+            ExecuteMarketOrder(request);
+
+            Print($"🚀 Trade executed: {direction} @ {entry:F5}, SL: {sl:F5}, TP1: {_fibLevel0:F5}");
+
+            // Send Telegram notification
+            _telegram?.SendMessage($"🚀 <b>Trade Opened</b>\n\n" +
+                                  $"📊 Symbol: {_tradeSymbol}\n" +
+                                  $"{(_bmsDirection == TradeDirection.Bullish ? "🔼" : "🔽")} Direction: {_bmsDirection}\n" +
+                                  $"📍 Entry: {entry:F5}\n" +
+                                  $"🛡 SL: {sl:F5}\n" +
+                                  $"🎯 TP1: {_fibLevel0:F5}\n" +
+                                  $"💎 Extremum: {_confirmedExtremum:F5}");
+        }
+
+        private void ExecuteGridOrders(TradeType direction, double sl, double slDistance)
+        {
+            // Create grid orders
+            double fibHigh, fibLow;
+            if (_bmsDirection == TradeDirection.Bullish)
+            {
+                fibHigh = _confirmedExtremum;
+                fibLow = _swingPointBeforeBms;
+            }
+            else
+            {
+                fibHigh = _swingPointBeforeBms;
+                fibLow = _confirmedExtremum;
+            }
+
+            _gridManager.CreateGridOrders(
+                EntryZoneMin,
+                EntryZoneMax,
+                fibHigh,
+                fibLow,
+                RiskPercent,
+                _bmsDirection == TradeDirection.Bullish
+            );
+
+            // Calculate lot sizes
+            _gridManager.CalculateLotSizes(Account.Balance, slDistance, Symbol.PipValue);
+
+            Print("📊 Grid orders created:");
+            Print(_gridManager.GetGridSummary());
+
+            // Place first order at current price (market order)
+            var firstOrder = _gridManager.Orders.FirstOrDefault();
+            if (firstOrder != null)
+            {
+                var request = new MarketOrderRequest
+                {
+                    SymbolName = _tradeSymbol,
+                    TradeType = direction,
+                    VolumeInUnits = firstOrder.LotSize,
+                    StopLossInPrice = sl,
+                    TakeProfitInPrice = _fibLevel0,
+                    Label = "BMS_FIB_GRID"
+                };
+
+                ExecuteMarketOrder(request);
+                _gridManager.MarkOrderFilled(firstOrder);
+                _filledGridOrders = 1;
+
+                Print($"🚀 Grid order 1/{_gridManager.Orders.Count} filled @ {firstOrder.Price:F5}");
+            }
+
+            // Place pending orders for remaining grid levels
+            var remainingOrders = _gridManager.GetRemainingOrders();
+            foreach (var gridOrder in remainingOrders)
+            {
+                // Place limit order at grid level
+                var limitRequest = new LimitOrderRequest
+                {
+                    SymbolName = _tradeSymbol,
+                    TradeType = direction,
+                    VolumeInUnits = gridOrder.LotSize,
+                    TargetPrice = gridOrder.Price,
+                    StopLossInPrice = sl,
+                    TakeProfitInPrice = _fibLevel0,
+                    Label = "BMS_FIB_GRID"
+                };
+
+                var result = PlaceLimitOrder(limitRequest);
+                if (result.IsSuccessful)
+                {
+                    _gridManager.MarkOrderPending(gridOrder, result.Order.Id);
+                    Print($"⏳ Grid limit order placed @ {gridOrder.Price:F5} (Fib {gridOrder.FibLevel:F3})");
+                }
+            }
+
+            // Send Telegram notification with grid summary
+            _telegram?.SendMessage($"📊 <b>Grid Orders Placed</b>\n\n" +
+                                  $"📊 Symbol: {_tradeSymbol}\n" +
+                                  $"{(_bmsDirection == TradeDirection.Bullish ? "🔼" : "🔽")} Direction: {_bmsDirection}\n" +
+                                  $"🎯 Grid: {_gridManager.Orders.Count} orders\n\n" +
+                                  _gridManager.GetTelegramSummary());
+        }
+
+        private void CheckGridOrderFills()
+        {
+            if (_gridManager == null)
+                return;
+
+            var pendingOrders = _gridManager.Orders.Where(o => o.IsPending).ToList();
+            foreach (var gridOrder in pendingOrders)
+            {
+                // Check if the pending order was filled
+                var position = Positions.FirstOrDefault(p => p.Label == "BMS_FIB_GRID" &&
+                                                             p.EntryPrice == gridOrder.Price);
+                if (position != null)
+                {
+                    _gridManager.MarkOrderFilled(gridOrder, position.Id.ToString());
+                    _filledGridOrders++;
+                    Print($"✅ Grid order filled @ {gridOrder.Price:F5} ({_filledGridOrders}/{_gridManager.Orders.Count})");
+
+                    // Send Telegram notification
+                    _telegram?.SendMessage($"✅ <b>Grid Order Filled</b>\n\n" +
+                                          $"📍 Entry: {gridOrder.Price:F5}\n" +
+                                          $"📊 Progress: {_filledGridOrders}/{_gridManager.Orders.Count}\n" +
+                                          $"💰 Risk Used: {_gridManager.GetTotalRiskUsed():F2}%");
+                }
+            }
         }
 
         #endregion
@@ -645,7 +883,7 @@ namespace BMSFiboLiquidity
 
                 if (rr < MinRewardRatio)
                 {
-                    Print($"R:R filter blocked: {rr:F2} < {MinRewardRatio}");
+                    Print($"⚠️ R:R filter blocked: {rr:F2} < {MinRewardRatio}");
                     return false;
                 }
             }
@@ -653,53 +891,6 @@ namespace BMSFiboLiquidity
             // Add more filter checks here (Trend, Volume, Volatility)
 
             return true;
-        }
-
-        private void ExecuteTrade()
-        {
-            var direction = _bmsDirection == TradeDirection.Bullish ? TradeType.Buy : TradeType.Sell;
-            var entry = Bars.ClosePrices.Last();
-
-            // Calculate SL with buffer
-            double sl;
-            if (_bmsDirection == TradeDirection.Bullish)
-                sl = _fibLevel1 * (1 - SlBufferPercent / 100);
-            else
-                sl = _fibLevel1 * (1 + SlBufferPercent / 100);
-
-            // Calculate lot size based on risk
-            var riskAmount = Account.Balance * RiskPercent / 100;
-            var slDistance = Math.Abs(entry - sl);
-            var lotSize = riskAmount / slDistance / Symbol.PipValue;
-            lotSize = Math.Round(lotSize, 2);
-            lotSize = Math.Max(Symbol.VolumeInUnitsMin, lotSize);
-
-            // Place order
-            var request = new MarketOrderRequest
-            {
-                SymbolName = TradeSymbol,
-                TradeType = direction,
-                VolumeInUnits = lotSize,
-                StopLossInPrice = sl,
-                TakeProfitInPrice = _fibLevel0,
-                Label = "BMS_FIB_LIQUIDITY"
-            };
-
-            ExecuteMarketOrder(request);
-
-            Print($"Trade executed: {direction} @ {entry:F5}, SL: {sl:F5}, TP1: {_fibLevel0:F5}");
-
-            _state = StrategyState.InTrade;
-            _dailyTrades++;
-
-            // Send Telegram notification
-            _telegram?.SendMessage($"🚀 Trade Opened\n" +
-                                  $"Symbol: {TradeSymbol}\n" +
-                                  $"Direction: {_bmsDirection}\n" +
-                                  $"Entry: {entry:F5}\n" +
-                                  $"SL: {sl:F5}\n" +
-                                  $"TP1: {_fibLevel0:F5}\n" +
-                                  $"Extremum: {_confirmedExtremum:F5}");
         }
 
         private void ResetState()
@@ -710,14 +901,50 @@ namespace BMSFiboLiquidity
             _bestExtremumAfterBms = 0;
             _confirmedExtremum = 0;
             _candlesSinceBms = 0;
+            _filledGridOrders = 0;
+
+            // Reset grid manager
+            if (_gridManager != null)
+            {
+                _gridManager.Reset();
+            }
         }
 
         protected override void OnPositionsClosed(PositionClosedEventArgs args)
         {
-            if (args.Position.Label == "BMS_FIB_LIQUIDITY")
+            if (args.Position.Label == "BMS_FIB_LIQUIDITY" || args.Position.Label == "BMS_FIB_GRID")
             {
-                Print($"Position closed: {args.Position.NetProfit:F2}");
-                ResetState();
+                var profit = args.Position.NetProfit;
+                var result = profit >= 0 ? "🎯 TP Hit" : "🛡 SL Hit";
+
+                Print($"{result}: Position closed with P/L: {profit:F2}");
+
+                // Check if all grid positions are closed
+                var remainingPositions = Positions.Where(p => p.Label == "BMS_FIB_GRID").Count();
+
+                if (remainingPositions == 0)
+                {
+                    // Send summary
+                    if (_gridManager != null && _gridManager.Orders.Any())
+                    {
+                        var avgEntry = _gridManager.GetAverageEntry();
+                        _telegram?.SendMessage($"🏁 <b>All Grid Positions Closed</b>\n\n" +
+                                              $"📊 Symbol: {_tradeSymbol}\n" +
+                                              $"{(_bmsDirection == TradeDirection.Bullish ? "🔼" : "🔽")} Direction: {_bmsDirection}\n" +
+                                              $"📍 Avg Entry: {avgEntry:F5}\n" +
+                                              $"💰 Net P/L: {profit:F2}");
+                    }
+
+                    ResetState();
+                }
+                else
+                {
+                    // Single position closed in grid
+                    _telegram?.SendMessage($"{result}\n\n" +
+                                          $"📍 Entry: {args.Position.EntryPrice:F5}\n" +
+                                          $"💰 P/L: {profit:F2}\n" +
+                                          $"📊 Remaining: {remainingPositions}");
+                }
             }
         }
 
