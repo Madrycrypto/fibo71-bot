@@ -18,7 +18,7 @@
 //+------------------------------------------------------------------+
 
 // Basic Settings
-input string   Section1 = "═════════ Basic Settings ════════";
+input string   Section1 = "=== Basic Settings ===";
 // Symbol is AUTO-DETECTED from chart! No need to set manually.
 input ENUM_TIMEFRAMES Timeframe = PERIOD_CURRENT;    // Trading Timeframe (use chart TF)
 input int      MagicNumber = 710071;                 // Magic Number
@@ -32,26 +32,26 @@ input int      MaxOpenPositions = 2;                 // Max simultaneous positio
 input int      MaxSpreadPips = 10;                   // Max spread (pips)
 
 // Fibonacci Settings
-input string   Section2 = "═════════ Fibonacci Settings ════════";
+input string   Section2 = "=== Fibonacci Settings ===";
 input double   FibEntryMin = 0.62;                   // Fib Entry Min (default 62%)
 input double   FibEntryMax = 0.71;                   // Fib Entry Max (default 71%)
 input double   FibTP = 1.0;                          // Fib TP Level (0%)
 input double   FibSL = 1.0;                          // Fib SL Level (100%)
 
 // BOS Detection
-input string   Section3 = "═════════ BOS Detection ════════";
+input string   Section3 = "=== BOS Detection ===";
 input int      BOSLookback = 50;                     // BOS Lookback Period
 input double   MinImbalancePips = 10.0;              // Min Imbalance (pips)
 
 // Grid Order Settings
-input string   SectionGrid = "═════════ Grid Orders ════════";
+input string   SectionGrid = "=== Grid Orders ===";
 input bool     EnableGridOrders = true;              // Enable Grid Orders
 input int      GridOrdersCount = 5;                  // Number of Grid Orders
 input string   GridSpacingMode = "equal";            // Spacing: equal, fib
 input string   GridDistribution = "equal";           // Distribution: equal, weighted
 
 // Filters
-input string   Section4 = "═════════ Filters ════════";
+input string   Section4 = "=== Filters ===";
 input bool     EnableImbalance = true;               // Require Imbalance filter
 input bool     EnableLiquiditySweep = true;          // Require Liquidity Sweep filter
 input string   TradingHoursStart = "08:00";          // Trading Hours Start
@@ -62,13 +62,13 @@ input string   DailyCloseTime = "16:00";             // Daily Close Time (HH:MM)
 input double   PartialClosePercent = 50.0;           // Partial Close at % of profit
 
 // Telegram Settings
-input string   Section5 = "═════════ Telegram Settings ════════";
+input string   Section5 = "=== Telegram Settings ===";
 input bool     EnableTelegram = true;                // Enable Telegram
 input string   TelegramBotToken = "";                // Bot Token (from @BotFather)
 input string   TelegramChatID = "";                  // Chat ID (from userinfobot)
 
 // Display Settings
-input string   Section6 = "════════ Display Settings ════════";
+input string   Section6 = "=== Display Settings ===";
 input bool     ShowFibLines = true;                  // Show Fibonacci Lines
 input bool     ShowLabels = true;                    // Show Labels on Chart
 input color    ColorBullish = clrGreen;              // Bullish Color
@@ -78,7 +78,7 @@ input color    ColorSL = clrRed;                     // SL Line Color
 input color    ColorEntry = clrBlue;                 // Entry Zone Color
 
 // Performance tracking
-input string   Section7 = "════════ Performance Tracking ════════";
+input string   Section7 = "=== Performance Tracking ===";
 input bool     EnableMonthlyStats = true;            // Enable Monthly Statistics
 input bool     EnableLast10Stats = true;             // Enable Last 10 Trades Stats
 
