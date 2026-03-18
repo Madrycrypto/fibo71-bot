@@ -71,11 +71,39 @@ input string   TelegramChatID = "";                  // Chat ID (from userinfobo
 input string   Section6 = "=== Display Settings ===";
 input bool     ShowFibLines = true;                  // Show Fibonacci Lines
 input bool     ShowLabels = true;                    // Show Labels on Chart
-input color    ColorBullish = clrGreen;              // Bullish Color
-input color    ColorBearish = clrRed;                // Bearish Color
-input color    ColorTP = clrLime;                    // TP Line Color
-input color    ColorSL = clrRed;                     // SL Line Color
-input color    ColorEntry = clrBlue;                 // Entry Zone Color
+input bool     ShowEntryZone = true;                 // Show Entry Zone Rectangle
+
+// Line Widths
+input string   Section6a = "--- Line Widths ---";
+input int      WidthMain = 2;                        // Main Lines Width (0%, 100%)
+input int      WidthEntry = 2;                       // Entry Lines Width (62%, 71%)
+input int      WidthFib = 1;                         // Other Fib Lines Width (38%, 50%)
+
+// Line Colors - TP/SL
+input string   Section6b = "--- TP/SL Colors ---";
+input color    ColorTP = clrLime;                    // TP (0%) Line Color
+input color    ColorSL = clrRed;                     // SL (100%) Line Color
+
+// Line Colors - Entry Zone
+input string   Section6c = "--- Entry Zone Colors ---";
+input color    ColorEntry62 = clrDodgerBlue;         // 62% Line Color
+input color    ColorEntry71 = clrDodgerBlue;         // 71% Line Color
+input color    ColorZoneLong = clrLightGreen;        // LONG Zone Background
+input color    ColorZoneShort = clrLightCoral;       // SHORT Zone Background
+
+// Line Colors - Other Fib Levels
+input string   Section6d = "--- Other Fib Colors ---";
+input color    ColorFib38 = clrGray;                 // 38.2% Line Color
+input color    ColorFib50 = clrGray;                 // 50% Line Color
+
+// Line Styles
+input string   Section6e = "--- Line Styles ---";
+input ENUM_LINE_STYLE StyleMain = STYLE_SOLID;       // Main Lines Style
+input ENUM_LINE_STYLE StyleEntry = STYLE_SOLID;      // Entry Lines Style
+input ENUM_LINE_STYLE StyleFib = STYLE_DASH;         // Other Fib Lines Style
+
+// Zone Opacity (0-100)
+input int      ZoneOpacity = 70;                     // Entry Zone Opacity (%)
 
 // Performance tracking
 input string   Section7 = "=== Performance Tracking ===";
@@ -294,41 +322,48 @@ void AnalyzeMarket()
 }
 
 //+------------------------------------------------------------------+
-//| Find Swing Points                                                 |
+//| Find Swing Points - Find MOST RECENT swing points                 |
 //+------------------------------------------------------------------+
 void FindSwingPoints()
 {
+    // Reset
+    swingHigh = 0;
+    swingLow = 0;
+    swingHighIdx = 0;
+    swingLowIdx = 0;
+
     // Look for swing high (higher than 2 candles on each side)
-    for(int i = 2; i < BOSLookback - 2; i++)
+    // Start from candle 1 (most recent closed) and go back
+    for(int i = 1; i < BOSLookback - 2; i++)
     {
         double h = iHigh(g_Symbol, Period(), i);
         double hPrev1 = iHigh(g_Symbol, Period(), i - 1);
-        double hPrev2 = iHigh(g_Symbol, Period(), i - 2);
-        double hNext1 = iHigh(g_Symbol, Period(), i + 1);
-        double hNext2 = iHigh(g_Symbol, Period(), i + 2);
+        double hPrev2 = iHigh(g_Symbol, Period(), i + 1);
+        double hNext1 = iHigh(g_Symbol, Period(), i + 2);
+        double hNext2 = iHigh(g_Symbol, Period(), i + 3);
 
         if(h > hPrev1 && h > hPrev2 && h > hNext1 && h > hNext2)
         {
             swingHigh = h;
             swingHighIdx = i;
-            break;
+            break;  // Found most recent swing high
         }
     }
 
     // Look for swing low (lower than 2 candles on each side)
-    for(int i = 2; i < BOSLookback - 2; i++)
+    for(int i = 1; i < BOSLookback - 2; i++)
     {
         double lo = iLow(g_Symbol, Period(), i);
         double lPrev1 = iLow(g_Symbol, Period(), i - 1);
-        double lPrev2 = iLow(g_Symbol, Period(), i - 2);
-        double lNext1 = iLow(g_Symbol, Period(), i + 1);
-        double lNext2 = iLow(g_Symbol, Period(), i + 2);
+        double lPrev2 = iLow(g_Symbol, Period(), i + 1);
+        double lNext1 = iLow(g_Symbol, Period(), i + 2);
+        double lNext2 = iLow(g_Symbol, Period(), i + 3);
 
         if(lo < lPrev1 && lo < lPrev2 && lo < lNext1 && lo < lNext2)
         {
             swingLow = lo;
             swingLowIdx = i;
-            break;
+            break;  // Found most recent swing low
         }
     }
 }
@@ -562,14 +597,58 @@ void DrawFibonacciLines()
     // Delete old objects
     ObjectsDeleteAll(0, prefix);
 
-    color lineColor = bearishBOSConfirmed ? ColorBearish : ColorBullish;
+    int symDigits = (int)SymbolInfoInteger(g_Symbol, SYMBOL_DIGITS);
+    datetime timeStart = iTime(g_Symbol, Period(), BOSLookback);
+    datetime timeEnd = TimeCurrent() + PeriodSeconds() * 50;
 
-    // Draw TP line (0%)
-    CreateHLine(prefix + "TP_0", fib0, ColorTP, 2, "TP (0%)");
+    // Entry zone colors based on direction
+    color zoneColor = bullishBOSConfirmed ? ColorZoneLong : ColorZoneShort;
+    color zoneBorderColor = bullishBOSConfirmed ? clrGreen : clrRed;
 
-    // Draw entry zone lines
-    CreateHLine(prefix + "Entry_62", fib62, ColorEntry, 1, "62%");
-    CreateHLine(prefix + "Entry_71", fib71, ColorEntry, 1, "71%");
+    // Draw ENTRY ZONE as rectangle (green for long, red for short)
+    if(ShowEntryZone)
+    {
+        double zoneTop = MathMax(fib62, fib71);
+        double zoneBottom = MathMin(fib62, fib71);
+
+        string zoneName = prefix + "EntryZone";
+        ObjectCreate(0, zoneName, OBJ_RECTANGLE, 0, timeStart, zoneTop, timeEnd, zoneBottom);
+        ObjectSetInteger(0, zoneName, OBJPROP_COLOR, zoneBorderColor);
+        ObjectSetInteger(0, zoneName, OBJPROP_FILL, true);
+        ObjectSetInteger(0, zoneName, OBJPROP_BACK, true);
+        ObjectSetInteger(0, zoneName, OBJPROP_STYLE, STYLE_SOLID);
+        ObjectSetInteger(0, zoneName, OBJPROP_WIDTH, 1);
+
+        // Set opacity (convert percentage to alpha 0-255)
+        int alpha = (int)(255 * ZoneOpacity / 100.0);
+        // Note: MT5 uses ARGB colors for opacity
+        ObjectSetInteger(0, zoneName, OBJPROP_COLOR, ColorToARGB(zoneColor, (uchar)(255 - alpha)));
+
+        ObjectSetString(0, zoneName, OBJPROP_TOOLTIP, "Entry Zone: " + DoubleToString(zoneBottom, symDigits) + " - " + DoubleToString(zoneTop, symDigits));
+    }
+
+    // Draw Fibonacci levels with labels
+    double fibRange = MathAbs(fib100 - fib0);
+
+    // 0% - TP Level
+    CreateHLineWithLabel(prefix + "Fib_0", fib0, ColorTP, WidthMain, StyleMain, "0% (TP)", timeEnd);
+
+    // 38.2% Level
+    double fib38 = bearishBOSConfirmed ? fib0 + fibRange * 0.382 : fib100 + fibRange * (1 - 0.382);
+    CreateHLineWithLabel(prefix + "Fib_38", fib38, ColorFib38, WidthFib, StyleFib, "38.2%", timeEnd);
+
+    // 50% Level
+    double fib50 = bearishBOSConfirmed ? fib0 + fibRange * 0.5 : fib100 + fibRange * 0.5;
+    CreateHLineWithLabel(prefix + "Fib_50", fib50, ColorFib50, WidthFib, StyleFib, "50%", timeEnd);
+
+    // 61.8% Level (Entry start)
+    CreateHLineWithLabel(prefix + "Fib_62", fib62, ColorEntry62, WidthEntry, StyleEntry, "61.8%", timeEnd);
+
+    // 71% Level (Entry end)
+    CreateHLineWithLabel(prefix + "Fib_71", fib71, ColorEntry71, WidthEntry, StyleEntry, "71%", timeEnd);
+
+    // 100% - SL Level
+    CreateHLineWithLabel(prefix + "Fib_100", fib100, ColorSL, WidthMain, StyleMain, "100% (SL)", timeEnd);
 
     // Draw grid order levels if enabled
     if(EnableGridOrders && ShowLabels)
@@ -577,46 +656,136 @@ void DrawFibonacciLines()
         for(int i = 0; i < GridOrdersCount; i++)
         {
             string gridName = prefix + "Grid_" + IntegerToString(i);
-            CreateHLine(gridName, gridOrders[i].price, clrGray, 1,
-                       "Grid " + IntegerToString(i+1) + " @ " + DoubleToString(gridOrders[i].price, (int)SymbolInfoInteger(g_Symbol, SYMBOL_DIGITS)));
+            CreateHLineWithLabel(gridName, gridOrders[i].price, clrGray, 1, STYLE_DOT,
+                       "Grid " + IntegerToString(i+1), timeEnd);
         }
     }
 
-    // Draw SL line (100%)
-    CreateHLine(prefix + "SL_100", fib100, ColorSL, 2, "SL (100%)");
-
-    // Draw swing points
+    // Draw swing points with labels
     if(ShowLabels)
     {
+        // Swing High arrow
         string labelName = prefix + "SwingHigh";
         datetime swingHighTime = iTime(g_Symbol, Period(), swingHighIdx);
         ObjectCreate(0, labelName, OBJ_ARROW_DOWN, 0, swingHighTime, swingHigh);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrRed);
         ObjectSetInteger(0, labelName, OBJPROP_WIDTH, 2);
 
+        // Swing High text label
+        string textName = prefix + "SwingHigh_Text";
+        ObjectCreate(0, textName, OBJ_TEXT, 0, swingHighTime, swingHigh);
+        ObjectSetString(0, textName, OBJPROP_TEXT, "HH (" + DoubleToString(swingHigh, symDigits) + ")");
+        ObjectSetInteger(0, textName, OBJPROP_COLOR, clrRed);
+        ObjectSetInteger(0, textName, OBJPROP_FONTSIZE, 10);
+
+        // Swing Low arrow
         labelName = prefix + "SwingLow";
         datetime swingLowTime = iTime(g_Symbol, Period(), swingLowIdx);
         ObjectCreate(0, labelName, OBJ_ARROW_UP, 0, swingLowTime, swingLow);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrGreen);
         ObjectSetInteger(0, labelName, OBJPROP_WIDTH, 2);
+
+        // Swing Low text label
+        textName = prefix + "SwingLow_Text";
+        ObjectCreate(0, textName, OBJ_TEXT, 0, swingLowTime, swingLow);
+        ObjectSetString(0, textName, OBJPROP_TEXT, "LL (" + DoubleToString(swingLow, symDigits) + ")");
+        ObjectSetInteger(0, textName, OBJPROP_COLOR, clrGreen);
+        ObjectSetInteger(0, textName, OBJPROP_FONTSIZE, 10);
+
+        // BOS Label on chart
+        if(bullishBOSConfirmed || bearishBOSConfirmed)
+        {
+            string bosText = bullishBOSConfirmed ? "BULLISH BOS" : "BEARISH BOS";
+            color bosColor = bullishBOSConfirmed ? clrGreen : clrRed;
+
+            string bosLabel = prefix + "BOS_Label";
+            ObjectCreate(0, bosLabel, OBJ_LABEL, 0, 0, 0);
+            ObjectSetInteger(0, bosLabel, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+            ObjectSetInteger(0, bosLabel, OBJPROP_XDISTANCE, 20);
+            ObjectSetInteger(0, bosLabel, OBJPROP_YDISTANCE, 30);
+            ObjectSetString(0, bosLabel, OBJPROP_TEXT, bosText);
+            ObjectSetInteger(0, bosLabel, OBJPROP_COLOR, bosColor);
+            ObjectSetInteger(0, bosLabel, OBJPROP_FONTSIZE, 14);
+            ObjectSetString(0, bosLabel, OBJPROP_FONT, "Arial Bold");
+        }
     }
 
     ChartRedraw(0);
 }
 
 //+------------------------------------------------------------------+
-//| Create Horizontal Line Helper                                     |
+//| Create Horizontal Line with Label                                 |
 //+------------------------------------------------------------------+
-bool CreateHLine(string name, double price, color clr, int width, string tooltip)
+bool CreateHLineWithLabel(string name, double price, color clr, int width, ENUM_LINE_STYLE style, string labelText, datetime labelTime)
 {
+    int symDigits = (int)SymbolInfoInteger(g_Symbol, SYMBOL_DIGITS);
+
+    // Create the horizontal line
     if(ObjectFind(0, name) < 0)
         ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
 
     ObjectSetDouble(0, name, OBJPROP_PRICE, price);
     ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
     ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
-    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
-    ObjectSetString(0, name, OBJPROP_TOOLTIP, tooltip);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, style);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+    ObjectSetString(0, name, OBJPROP_TOOLTIP, labelText + ": " + DoubleToString(price, symDigits));
+
+    // Create text label at the right side
+    string textName = name + "_Text";
+    if(ObjectFind(0, textName) < 0)
+        ObjectCreate(0, textName, OBJ_TEXT, 0, labelTime, price);
+
+    ObjectSetString(0, textName, OBJPROP_TEXT, labelText);
+    ObjectSetInteger(0, textName, OBJPROP_COLOR, clr);
+    ObjectSetInteger(0, textName, OBJPROP_FONTSIZE, 9);
+    ObjectSetString(0, textName, OBJPROP_FONT, "Arial");
+
+    return true;
+}
+            color bosColor = bullishBOSConfirmed ? clrGreen : clrRed;
+            datetime bosTime = iTime(g_Symbol, Period(), 1);
+
+            string bosLabel = prefix + "BOS_Label";
+            ObjectCreate(0, bosLabel, OBJ_LABEL, 0, 0, 0);
+            ObjectSetInteger(0, bosLabel, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+            ObjectSetInteger(0, bosLabel, OBJPROP_XDISTANCE, 20);
+            ObjectSetInteger(0, bosLabel, OBJPROP_YDISTANCE, 30);
+            ObjectSetString(0, bosLabel, OBJPROP_TEXT, bosText);
+            ObjectSetInteger(0, bosLabel, OBJPROP_COLOR, bosColor);
+            ObjectSetInteger(0, bosLabel, OBJPROP_FONTSIZE, 14);
+            ObjectSetString(0, bosLabel, OBJPROP_FONT, "Arial Bold");
+        }
+    }
+
+    ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| Create Horizontal Line with Label                                 |
+//+------------------------------------------------------------------+
+bool CreateHLineWithLabel(string name, double price, color clr, int width, string labelText, datetime labelTime)
+{
+    // Create the horizontal line
+    if(ObjectFind(0, name) < 0)
+        ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
+
+    ObjectSetDouble(0, name, OBJPROP_PRICE, price);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+    ObjectSetString(0, name, OBJPROP_TOOLTIP, labelText + ": " + DoubleToString(price, (int)SymbolInfoInteger(g_Symbol, SYMBOL_DIGITS)));
+
+    // Create text label at the right side
+    string textName = name + "_Text";
+    if(ObjectFind(0, textName) < 0)
+        ObjectCreate(0, textName, OBJ_TEXT, 0, labelTime, price);
+
+    ObjectSetString(0, textName, OBJPROP_TEXT, labelText);
+    ObjectSetInteger(0, textName, OBJPROP_COLOR, clr);
+    ObjectSetInteger(0, textName, OBJPROP_FONTSIZE, 9);
+    ObjectSetString(0, textName, OBJPROP_FONT, "Arial");
 
     return true;
 }
