@@ -40,12 +40,12 @@ input double   FibSL = 1.0;                          // Fib SL Level (100%)
 // BOS Detection
 input string   Section4 = "════════ BOS Detection ════════";
 input int      BOSLookback = 50;                     // BOS Lookback Period
-input double   MinImbalancePips = 10.0;              // Min Imbalance (pips)
+input double   MinImbalancePips = 3.0;               // Min Imbalance (pips) - use 3 for M1, 10 for H1
 
 // Filters
 input string   Section5 = "════════ Filters ════════";
-input bool     EnableImbalance = true;               // Require Imbalance
-input bool     EnableLiquiditySweep = true;          // Require Liquidity Sweep
+input bool     EnableImbalance = false;              // Require Imbalance (disable for more signals)
+input bool     EnableLiquiditySweep = false;         // Require Liquidity Sweep (disable for more signals)
 input string   TradingHoursStart = "08:00";          // Trading Hours Start
 input string   TradingHoursEnd = "20:00";            // Trading Hours End
 
@@ -91,11 +91,13 @@ double imbEnd = 0;
 bool liquiditySweep = false;
 
 // Fibonacci levels
-double fib0 = 0;     // TP
+double fib0 = 0;     // TP (0%)
+double fib100 = 0;   // SL (100%)
 double fib71 = 0;    // Entry zone start
-double fib75 = 0;    // Entry zone middle
 double fib79 = 0;    // Entry zone end
-double fib100 = 0;   // SL
+
+// Setup state
+bool setupCancelled = false;
 
 // Chart objects
 string prefix = "Fibo71_";
@@ -182,6 +184,16 @@ void OnTick()
     if(!symbolInfo.RefreshRates())
         return;
 
+    // Check if price touched 0% or 100% - CANCEL setup
+    if(bullishBOSConfirmed || bearishBOSConfirmed)
+    {
+        if(CheckSetupInvalidation())
+        {
+            CancelSetup();
+            return;
+        }
+    }
+
     // Check for new candle
     static datetime lastCandleTime = 0;
     bool isNewCandle = (Time[0] != lastCandleTime);
@@ -244,7 +256,78 @@ void AnalyzeMarket()
         {
             SendSetupNotification();
             setupActive = true;
+            setupCancelled = false;
         }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Check if Setup is Invalidated (price touched 0% or 100%)          |
+//+------------------------------------------------------------------+
+bool CheckSetupInvalidation()
+{
+    if(fib0 == 0 || fib100 == 0)
+        return false;
+
+    double bid = symbolInfo.Bid();
+    double ask = symbolInfo.Ask();
+
+    // Check if price is NOT in entry zone
+    bool inEntryZone = false;
+    if(bearishBOSConfirmed)
+        inEntryZone = (bid >= fib79 && bid <= fib71);
+    else if(bullishBOSConfirmed)
+        inEntryZone = (bid <= fib71 && bid >= fib79);
+
+    // If not in entry zone and touched 0% or 100% -> cancel
+    if(!inEntryZone)
+    {
+        // Touched 0% (TP level)
+        if(bearishBOSConfirmed && bid <= fib0)
+            return true;
+        if(bullishBOSConfirmed && ask >= fib0)
+            return true;
+
+        // Touched 100% (SL level)
+        if(bearishBOSConfirmed && ask >= fib100)
+            return true;
+        if(bullishBOSConfirmed && bid <= fib100)
+            return true;
+    }
+
+    return false;
+}
+
+//+------------------------------------------------------------------+
+//| Cancel Setup - Remove all levels                                  |
+//+------------------------------------------------------------------+
+void CancelSetup()
+{
+    // Delete chart objects
+    ObjectsDeleteAll(0, prefix);
+
+    // Reset state
+    bullishBOSConfirmed = false;
+    bearishBOSConfirmed = false;
+    setupActive = false;
+    setupCancelled = true;
+    fib0 = 0;
+    fib100 = 0;
+    fib71 = 0;
+    fib79 = 0;
+
+    // Cancel pending order if exists
+    if(pendingTicket > 0)
+    {
+        trade.OrderDelete(pendingTicket);
+        pendingTicket = 0;
+    }
+
+    Print("⚪ Setup CANCELLED - price touched 0% or 100%");
+
+    if(EnableTelegram)
+    {
+        SendTelegram("⚪ <b>Setup Cancelled</b>\n\nPrice touched 0% or 100% without entering entry zone.\n⏰ " + TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES));
     }
 }
 
@@ -253,6 +336,12 @@ void AnalyzeMarket()
 //+------------------------------------------------------------------+
 void FindSwingPoints()
 {
+    // Reset
+    swingHigh = 0;
+    swingLow = 0;
+    swingHighIdx = 0;
+    swingLowIdx = 0;
+
     // Look for swing high (higher than 2 candles on each side)
     for(int i = 2; i < BOSLookback - 2; i++)
     {
@@ -294,23 +383,27 @@ void FindSwingPoints()
 void DetectBOS()
 {
     double close = iClose(Symbol, Timeframe, 0);
-    double high = iHigh(Symbol, Timeframe, 0);
-    double low = iLow(Symbol, Timeframe, 0);
 
-    // Reset
-    bullishBOS = false;
-    bearishBOS = false;
+    // Reset (only if no active setup)
+    if(!setupActive)
+    {
+        bullishBOS = false;
+        bearishBOS = false;
+    }
 
     // Bearish BOS: close below swing low
-    if(swingLow > 0 && close < swingLow && (0 - swingLowIdx) <= BOSLookback)
+    // swingLowIdx must be >= 3 (not too fresh) and <= BOSLookback (not too old)
+    if(swingLow > 0 && close < swingLow && swingLowIdx >= 3 && swingLowIdx <= BOSLookback)
     {
         bearishBOS = true;
+        bullishBOS = false;
     }
 
     // Bullish BOS: close above swing high
-    if(swingHigh > 0 && close > swingHigh && (0 - swingHighIdx) <= BOSLookback)
+    if(swingHigh > 0 && close > swingHigh && swingHighIdx >= 3 && swingHighIdx <= BOSLookback)
     {
         bullishBOS = true;
+        bearishBOS = false;
     }
 }
 
@@ -399,20 +492,18 @@ void CalculateFibonacci()
 {
     if(bearishBOSConfirmed)
     {
-        // Bearish: swingHigh is start (100%), swingLow is end (0%)
-        fib0 = swingLow;                          // TP
-        fib100 = swingHigh;                       // SL
+        // Bearish: swingHigh is 100%, swingLow is 0%
+        fib0 = swingLow;                          // TP (0%)
+        fib100 = swingHigh;                       // SL (100%)
         fib71 = swingLow + (swingHigh - swingLow) * FibEntryMin;
-        fib75 = swingLow + (swingHigh - swingLow) * 0.75;
         fib79 = swingLow + (swingHigh - swingLow) * FibEntryMax;
     }
     else if(bullishBOSConfirmed)
     {
-        // Bullish: swingLow is start (100%), swingHigh is end (0%)
-        fib0 = swingHigh;                         // TP
-        fib100 = swingLow;                        // SL
+        // Bullish: swingLow is 100%, swingHigh is 0%
+        fib0 = swingHigh;                         // TP (0%)
+        fib100 = swingLow;                        // SL (100%)
         fib71 = swingHigh - (swingHigh - swingLow) * FibEntryMin;
-        fib75 = swingHigh - (swingHigh - swingLow) * 0.75;
         fib79 = swingHigh - (swingHigh - swingLow) * FibEntryMax;
     }
 }
@@ -428,20 +519,17 @@ void DrawFibonacciLines()
     // Delete old objects
     ObjectsDeleteAll(0, prefix);
 
-    datetime timeStart = Time[0];
-    datetime timeEnd = Time[0] + PeriodSeconds() * 50;
-
     color lineColor = bearishBOSConfirmed ? ColorBearish : ColorBullish;
 
-    // Draw TP line (0%)
+    // Draw only 3 levels: 0%, entry zone, 100%
+    // TP line (0%)
     HLineCreate(0, prefix + "TP_0", 0, fib0, ColorTP, STYLE_SOLID, 2, "TP (0%)", true);
 
-    // Draw entry zone lines
-    HLineCreate(0, prefix + "Entry_71", 0, fib71, ColorEntry, STYLE_DASH, 1, "71%", true);
-    HLineCreate(0, prefix + "Entry_75", 0, fib75, ColorEntry, STYLE_SOLID, 1, "75%", true);
-    HLineCreate(0, prefix + "Entry_79", 0, fib79, ColorEntry, STYLE_DASH, 1, "79%", true);
+    // Entry zone - just top and bottom
+    HLineCreate(0, prefix + "Entry_71", 0, fib71, ColorEntry, STYLE_SOLID, 1, "Entry 71%", true);
+    HLineCreate(0, prefix + "Entry_79", 0, fib79, ColorEntry, STYLE_SOLID, 1, "Entry 79%", true);
 
-    // Draw SL line (100%)
+    // SL line (100%)
     HLineCreate(0, prefix + "SL_100", 0, fib100, ColorSL, STYLE_SOLID, 2, "SL (100%)", true);
 
     // Draw swing points
@@ -479,7 +567,6 @@ void CheckTradeSetup()
 
     // Check if price is in entry zone
     bool inEntryZone = false;
-    double entryPrice = fib75; // Use middle of zone
 
     if(bearishBOSConfirmed)
     {
@@ -544,17 +631,20 @@ void PlaceLimitOrder()
     double entryPrice, sl, tp;
     ENUM_ORDER_TYPE orderType;
 
+    // Middle of entry zone (71-79%)
+    double entryMid = (fib71 + fib79) / 2.0;
+
     if(bearishBOSConfirmed)
     {
         orderType = ORDER_TYPE_SELL_LIMIT;
-        entryPrice = fib75;  // Middle of entry zone
+        entryPrice = entryMid;
         sl = fib100;
         tp = fib0;
     }
     else if(bullishBOSConfirmed)
     {
         orderType = ORDER_TYPE_BUY_LIMIT;
-        entryPrice = fib75;  // Middle of entry zone
+        entryPrice = entryMid;
         sl = fib100;
         tp = fib0;
     }
@@ -636,7 +726,9 @@ double CalculateLotSize()
     double balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double risk = RiskPercent / 100.0 * balance;
 
-    double slPips = MathAbs(fib75 - fib100) / SymbolInfoDouble(Symbol, SYMBOL_POINT) / 10;
+    // Use middle of entry zone for SL calculation
+    double entryMid = (fib71 + fib79) / 2.0;
+    double slPips = MathAbs(entryMid - fib100) / SymbolInfoDouble(Symbol, SYMBOL_POINT) / 10;
 
     double pipValue = SymbolInfoDouble(Symbol, SYMBOL_TRADE_TICK_VALUE);
     double lotSize = risk / (slPips * pipValue);
