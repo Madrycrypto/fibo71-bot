@@ -3,7 +3,7 @@
 //|                                    BOS from SMC + Fibonacci       |
 //+------------------------------------------------------------------+
 #property copyright "Fibo71 Bot - SMC Integration"
-#property version   "1.00"
+#property version   "1.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -16,7 +16,7 @@
 
 // Basic Settings
 input string   Section1 = "════════ Basic Settings ════════";
-input string   TradeSymbol = "EURUSD";                 // Trading Symbol
+input string   TradeSymbol = "";                      // Symbol (empty = chart symbol)
 input ENUM_TIMEFRAMES Timeframe = PERIOD_M1;          // Trading Timeframe
 input int      MagicNumber = 710071;                  // Magic Number
 
@@ -40,6 +40,17 @@ input bool     EnableTelegram = false;                // Enable Telegram
 input string   TelegramBotToken = "";                 // Bot Token
 input string   TelegramChatID = "";                   // Chat ID
 
+// Display
+input string   Section6 = "════════ Display ════════";
+input int      LineExtensionBars = 50;                // How far lines extend (bars)
+input color    ColorTP = clrLime;                     // TP (0%) line color
+input color    ColorSL = clrRed;                      // SL (100%) line color
+input color    ColorEntry = clrBlue;                  // Entry zone color
+input color    ColorBullish = clrGreen;               // Bullish setup color
+input color    ColorBearish = clrRed;                 // Bearish setup color
+input int      LineWidthMain = 2;                     // TP/SL line width
+input int      LineWidthZone = 1;                     // Entry zone line width
+
 //+------------------------------------------------------------------+
 //| GLOBAL VARIABLES                                                  |
 //+------------------------------------------------------------------+
@@ -47,6 +58,9 @@ input string   TelegramChatID = "";                   // Chat ID
 CTrade trade;
 CPositionInfo positionInfo;
 CSymbolInfo symbolInfo;
+
+// Working symbol (auto-set from chart if input is empty)
+string g_symbol = "";
 
 // SMC Indicator handle
 int smcHandle = INVALID_HANDLE;
@@ -76,6 +90,7 @@ bool setupActive = false;
 int dailyTrades = 0;
 datetime lastTradeDate = 0;
 ulong pendingTicket = 0;
+int bosBarIdx = 0;  // BOS bar for line drawing
 
 // Chart prefix
 string prefix = "Fibo71_";
@@ -85,20 +100,23 @@ string prefix = "Fibo71_";
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // Auto-detect symbol from chart if not specified
+    g_symbol = (TradeSymbol == "") ? _Symbol : TradeSymbol;
+
     // Initialize trade
     trade.SetExpertMagicNumber(MagicNumber);
     trade.SetDeviationInPoints(20);
     trade.SetTypeFilling(ORDER_FILLING_IOC);
 
     // Check symbol
-    if(!symbolInfo.Name(TradeSymbol))
+    if(!symbolInfo.Name(g_symbol))
     {
-        Print("❌ Symbol not found: ", TradeSymbol);
+        Print("❌ Symbol not found: ", g_symbol);
         return INIT_FAILED;
     }
 
     // Load SMC indicator
-    smcHandle = iCustom(TradeSymbol, Timeframe, SMC_IndicatorName);
+    smcHandle = iCustom(g_symbol, Timeframe, SMC_IndicatorName);
     if(smcHandle == INVALID_HANDLE)
     {
         Print("❌ Cannot load SMC indicator: ", SMC_IndicatorName);
@@ -107,11 +125,12 @@ int OnInit()
     }
 
     Print("══════════════════════════════════════════════════");
-    Print("🤖 Fibo 71 Bot - SMC Integration");
+    Print("🤖 Fibo 71 Bot - SMC Integration v1.20");
     Print("══════════════════════════════════════════════════");
-    Print("Symbol: ", TradeSymbol, " | Timeframe: ", EnumToString(Timeframe));
+    Print("Symbol: ", g_symbol, " | Timeframe: ", EnumToString(Timeframe));
     Print("SMC Indicator: ", SMC_IndicatorName);
     Print("Entry Zone: ", FibEntryMin * 100, "% - ", FibEntryMax * 100, "%");
+    Print("Line Extension: ", LineExtensionBars, " bars");
     Print("══════════════════════════════════════════════════");
 
     return INIT_SUCCEEDED;
@@ -149,11 +168,11 @@ void OnTick()
 
     // Check for new candle
     static datetime lastCandleTime = 0;
-    bool isNewCandle = (iTime(TradeSymbol, Timeframe, 0) != lastCandleTime);
+    bool isNewCandle = (iTime(g_symbol, Timeframe, 0) != lastCandleTime);
 
     if(isNewCandle)
     {
-        lastCandleTime = iTime(TradeSymbol, Timeframe, 0);
+        lastCandleTime = iTime(g_symbol, Timeframe, 0);
 
         // Reset daily counter
         if(TimeCurrent() - lastTradeDate > 86400)
@@ -218,7 +237,8 @@ void CheckBOSFromIndicator()
         {
             currentBOS.detected = true;
             currentBOS.isBullish = newBullishBOS;
-            currentBOS.time = iTime(TradeSymbol, Timeframe, 1);
+            currentBOS.time = iTime(g_symbol, Timeframe, 1);
+            bosBarIdx = 1;  // BOS confirmed on previous candle
 
             // Calculate Fibonacci
             CalculateFibonacci();
@@ -297,11 +317,11 @@ void FindSwingPointsManually(bool isBullish)
     // Find swing high
     for(int i = 2; i < lookback - 2; i++)
     {
-        double h = iHigh(TradeSymbol, Timeframe, i);
-        if(h > iHigh(TradeSymbol, Timeframe, i+1) &&
-           h > iHigh(TradeSymbol, Timeframe, i+2) &&
-           h > iHigh(TradeSymbol, Timeframe, i-1) &&
-           h > iHigh(TradeSymbol, Timeframe, i-2))
+        double h = iHigh(g_symbol, Timeframe, i);
+        if(h > iHigh(g_symbol, Timeframe, i+1) &&
+           h > iHigh(g_symbol, Timeframe, i+2) &&
+           h > iHigh(g_symbol, Timeframe, i-1) &&
+           h > iHigh(g_symbol, Timeframe, i-2))
         {
             currentBOS.swingHigh = h;
             currentBOS.swingHighIdx = i;
@@ -312,11 +332,11 @@ void FindSwingPointsManually(bool isBullish)
     // Find swing low
     for(int i = 2; i < lookback - 2; i++)
     {
-        double l = iLow(TradeSymbol, Timeframe, i);
-        if(l < iLow(TradeSymbol, Timeframe, i+1) &&
-           l < iLow(TradeSymbol, Timeframe, i+2) &&
-           l < iLow(TradeSymbol, Timeframe, i-1) &&
-           l < iLow(TradeSymbol, Timeframe, i-2))
+        double l = iLow(g_symbol, Timeframe, i);
+        if(l < iLow(g_symbol, Timeframe, i+1) &&
+           l < iLow(g_symbol, Timeframe, i+2) &&
+           l < iLow(g_symbol, Timeframe, i-1) &&
+           l < iLow(g_symbol, Timeframe, i-2))
         {
             currentBOS.swingLow = l;
             currentBOS.swingLowIdx = i;
@@ -357,17 +377,69 @@ void DrawFibonacciLines()
 {
     ObjectsDeleteAll(0, prefix);
 
-    // TP line (0%)
-    HLineCreate(0, prefix + "TP", 0, fib0, clrLime, STYLE_SOLID, 2, "TP 0%", true);
+    // Get BOS candle time and calculate end time
+    datetime bosTime = iTime(g_symbol, Timeframe, bosBarIdx);
+    datetime endTime = bosTime + PeriodSeconds(Timeframe) * LineExtensionBars;
 
-    // Entry zone
-    HLineCreate(0, prefix + "Entry71", 0, fib71, clrBlue, STYLE_SOLID, 1, "Entry 71%", true);
-    HLineCreate(0, prefix + "Entry79", 0, fib79, clrBlue, STYLE_SOLID, 1, "Entry 79%", true);
+    color setupColor = currentBOS.isBullish ? ColorBullish : ColorBearish;
+
+    // TP line (0%)
+    TrendLine(prefix + "TP", bosTime, fib0, endTime, fib0, ColorTP, LineWidthMain, "0% TP");
+
+    // Entry zone lines
+    TrendLine(prefix + "Entry71", bosTime, fib71, endTime, fib71, ColorEntry, LineWidthZone, "71%");
+    TrendLine(prefix + "Entry79", bosTime, fib79, endTime, fib79, ColorEntry, LineWidthZone, "79%");
+
+    // Fill entry zone with rectangle
+    RectCreate(prefix + "Zone", bosTime, fib71, endTime, fib79, setupColor);
 
     // SL line (100%)
-    HLineCreate(0, prefix + "SL", 0, fib100, clrRed, STYLE_SOLID, 2, "SL 100%", true);
+    TrendLine(prefix + "SL", bosTime, fib100, endTime, fib100, ColorSL, LineWidthMain, "100% SL");
+
+    // BOS label
+    string bosText = currentBOS.isBullish ? "🟢 BULLISH" : "🔴 BEARISH";
+    double bosPrice = currentBOS.isBullish ? currentBOS.swingLow : currentBOS.swingHigh;
+    Label(prefix + "BOS", bosTime, bosPrice, bosText, setupColor);
 
     ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| Trend Line helper                                                 |
+//+------------------------------------------------------------------+
+void TrendLine(string name, datetime time1, double price1, datetime time2, double price2, color col, int width, string label)
+{
+    ObjectCreate(0, name, OBJ_TREND, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetString(0, name, OBJPROP_TEXT, label);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+}
+
+//+------------------------------------------------------------------+
+//| Rectangle helper                                                  |
+//+------------------------------------------------------------------+
+void RectCreate(string name, datetime time1, double price1, datetime time2, double price2, color col)
+{
+    ObjectCreate(0, name, OBJ_RECTANGLE, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_FILL, true);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+}
+
+//+------------------------------------------------------------------+
+//| Label helper                                                      |
+//+------------------------------------------------------------------+
+void Label(string name, datetime time, double price, string text, color col)
+{
+    ObjectCreate(0, name, OBJ_TEXT, 0, time, price);
+    ObjectSetString(0, name, OBJPROP_TEXT, text);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
 }
 
 //+------------------------------------------------------------------+
@@ -454,15 +526,15 @@ void PlaceLimitOrder()
 {
     double entryPrice = (fib71 + fib79) / 2.0;
     double lotSize = CalculateLotSize();
-    int digits = (int)SymbolInfoInteger(TradeSymbol, SYMBOL_DIGITS);
+    int digits = (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS);
 
     entryPrice = NormalizeDouble(entryPrice, digits);
 
     bool success;
     if(currentBOS.isBullish)
-        success = trade.BuyLimit(lotSize, entryPrice, TradeSymbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71 SMC");
+        success = trade.BuyLimit(lotSize, entryPrice, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71 SMC");
     else
-        success = trade.SellLimit(lotSize, entryPrice, TradeSymbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71 SMC");
+        success = trade.SellLimit(lotSize, entryPrice, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71 SMC");
 
     if(success)
     {
@@ -500,14 +572,14 @@ double CalculateLotSize()
     double risk = RiskPercent / 100.0 * balance;
     double entryPrice = (fib71 + fib79) / 2.0;
     double slDistance = MathAbs(entryPrice - fib100);
-    double point = SymbolInfoDouble(TradeSymbol, SYMBOL_POINT);
-    double tickValue = SymbolInfoDouble(TradeSymbol, SYMBOL_TRADE_TICK_VALUE);
+    double point = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
+    double tickValue = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
 
     double lots = risk / (slDistance / point * tickValue);
 
-    double minLot = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_MIN);
-    double maxLot = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_MAX);
-    double step = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_STEP);
+    double minLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MAX);
+    double step = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_STEP);
 
     lots = MathFloor(lots / step) * step;
     lots = MathMax(minLot, MathMin(maxLot, lots));
@@ -522,7 +594,7 @@ void SendBOSNotification()
 {
     string dir = currentBOS.isBullish ? "🟢 BULLISH" : "🔴 BEARISH";
     string msg = dir + " BOS Detected\n\n";
-    msg += "Symbol: " + TradeSymbol + "\n";
+    msg += "Symbol: " + g_symbol + "\n";
     msg += "TP (0%): " + DoubleToString(fib0, 5) + "\n";
     msg += "Entry: " + DoubleToString(fib71, 5) + " - " + DoubleToString(fib79, 5) + "\n";
     msg += "SL (100%): " + DoubleToString(fib100, 5);
@@ -583,23 +655,4 @@ string URLEncode(string text)
     return result;
 }
 
-//+------------------------------------------------------------------+
-//| HLineCreate helper                                                |
-//+------------------------------------------------------------------+
-bool HLineCreate(long chart_id, string name, int sub_window,
-                 double price, color line_color, ENUM_LINE_STYLE style,
-                 int width, string label, bool selectable)
-{
-    if(ObjectFind(chart_id, name) < 0)
-        ObjectCreate(chart_id, name, OBJ_HLINE, sub_window, 0, price);
-
-    ObjectSetDouble(chart_id, name, OBJPROP_PRICE, price);
-    ObjectSetInteger(chart_id, name, OBJPROP_COLOR, line_color);
-    ObjectSetInteger(chart_id, name, OBJPROP_STYLE, style);
-    ObjectSetInteger(chart_id, name, OBJPROP_WIDTH, width);
-    ObjectSetString(chart_id, name, OBJPROP_TEXT, label);
-    ObjectSetInteger(chart_id, name, OBJPROP_SELECTABLE, selectable);
-
-    return true;
-}
 //+------------------------------------------------------------------+

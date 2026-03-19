@@ -3,7 +3,7 @@
 //|                                    Clean BOS + Fibonacci Bot      |
 //+------------------------------------------------------------------+
 #property copyright "Fibo71 Bot v1"
-#property version   "1.00"
+#property version   "1.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -14,7 +14,7 @@
 
 // Basic
 input string   Section1 = "═══ Basic ═══";
-input string   TradeSymbol = "XAUUSD";
+input string   TradeSymbol = "";          // Symbol (empty = chart symbol)
 input ENUM_TIMEFRAMES Timeframe = PERIOD_M5;
 input int      MagicNumber = 710071;
 
@@ -40,11 +40,25 @@ input bool     EnableTelegram = false;
 input string   TelegramBotToken = "";
 input string   TelegramChatID = "";
 
+// Display
+input string   Section6 = "═══ Display ═══";
+input int      LineExtensionBars = 50;      // How far lines extend (bars)
+input color    ColorTP = clrLime;           // TP (0%) line color
+input color    ColorSL = clrRed;            // SL (100%) line color
+input color    ColorEntry = clrBlue;        // Entry zone color
+input color    ColorBullish = clrGreen;     // Bullish setup color
+input color    ColorBearish = clrRed;       // Bearish setup color
+input int      LineWidthMain = 2;           // TP/SL line width
+input int      LineWidthZone = 1;           // Entry zone line width
+
 //═══════════════════════════════════════════════════════════════════════════════
 // GLOBALS
 //═══════════════════════════════════════════════════════════════════════════════
 
 CTrade trade;
+
+// Working symbol (auto-set from chart if input is empty)
+string g_symbol = "";
 
 // Swing points
 double swingHigh = 0;
@@ -68,22 +82,29 @@ double fib100 = 0;    // SL (100%)
 // Pending order
 ulong pendingTicket = 0;
 
+// BOS bar for line drawing
+int bosBarIdx = 0;
+
 //═══════════════════════════════════════════════════════════════════════════════
 // INIT
 //═══════════════════════════════════════════════════════════════════════════════
 
 int OnInit()
 {
+    // Auto-detect symbol from chart if not specified
+    g_symbol = (TradeSymbol == "") ? _Symbol : TradeSymbol;
+
     trade.SetExpertMagicNumber(MagicNumber);
     trade.SetDeviationInPoints(20);
     trade.SetTypeFilling(ORDER_FILLING_IOC);
 
     Print("══════════════════════════════════════════════════");
-    Print("🤖 Fibo71 Bot v1");
+    Print("🤖 Fibo71 Bot v1.20");
     Print("══════════════════════════════════════════════════");
-    Print("Symbol: ", TradeSymbol, " | TF: ", EnumToString(Timeframe));
+    Print("Symbol: ", g_symbol, " | TF: ", EnumToString(Timeframe));
     Print("Swing Lookback: ", SwingLookback, " | BOS Lookback: ", BOSLookback);
     Print("Entry Zone: ", FibEntryMin*100, "% - ", FibEntryMax*100, "%");
+    Print("Line Extension: ", LineExtensionBars, " bars");
     Print("══════════════════════════════════════════════════");
 
     return INIT_SUCCEEDED;
@@ -116,8 +137,8 @@ void OnTick()
 
     // New candle
     static datetime lastBar = 0;
-    if(iTime(TradeSymbol, Timeframe, 0) == lastBar) return;
-    lastBar = iTime(TradeSymbol, Timeframe, 0);
+    if(iTime(g_symbol, Timeframe, 0) == lastBar) return;
+    lastBar = iTime(g_symbol, Timeframe, 0);
 
     // Analyze
     FindSwingPoints();
@@ -141,13 +162,13 @@ void FindSwingPoints()
     for(int i = SwingLookback; i < lookback - SwingLookback; i++)
     {
         bool isSwing = true;
-        double h = iHigh(TradeSymbol, Timeframe, i);
+        double h = iHigh(g_symbol, Timeframe, i);
 
         // Check candles on each side
         for(int j = 1; j <= SwingLookback; j++)
         {
-            if(iHigh(TradeSymbol, Timeframe, i+j) >= h ||
-               iHigh(TradeSymbol, Timeframe, i-j) >= h)
+            if(iHigh(g_symbol, Timeframe, i+j) >= h ||
+               iHigh(g_symbol, Timeframe, i-j) >= h)
             {
                 isSwing = false;
                 break;
@@ -166,12 +187,12 @@ void FindSwingPoints()
     for(int i = SwingLookback; i < lookback - SwingLookback; i++)
     {
         bool isSwing = true;
-        double l = iLow(TradeSymbol, Timeframe, i);
+        double l = iLow(g_symbol, Timeframe, i);
 
         for(int j = 1; j <= SwingLookback; j++)
         {
-            if(iLow(TradeSymbol, Timeframe, i+j) <= l ||
-               iLow(TradeSymbol, Timeframe, i-j) <= l)
+            if(iLow(g_symbol, Timeframe, i+j) <= l ||
+               iLow(g_symbol, Timeframe, i-j) <= l)
             {
                 isSwing = false;
                 break;
@@ -200,7 +221,7 @@ void DetectBOS()
     int dist = MathAbs(swingHighIdx - swingLowIdx);
     if(dist < SwingMinDistance) return;
 
-    double close = iClose(TradeSymbol, Timeframe, 0);
+    double close = iClose(g_symbol, Timeframe, 0);
 
     // === BULLISH BOS ===
     // Swing LOW is more recent (lower index), price breaks above swing HIGH
@@ -239,7 +260,7 @@ void DetectBOS()
 
 void CheckRetracementConfirmation()
 {
-    double close = iClose(TradeSymbol, Timeframe, 0);
+    double close = iClose(g_symbol, Timeframe, 0);
 
     // BULLISH: Wait for price to close BACK BELOW the BOS level (swing HIGH)
     if(bosSignalIsBullish && close < bosLevel)
@@ -291,6 +312,7 @@ void ActivateSetup(bool bullish, double swingH, double swingL)
 
     isBullishSetup = bullish;
     setupActive = true;
+    bosBarIdx = 1;  // BOS confirmed on previous candle
 
     DrawLines();
     PrintSetup();
@@ -306,8 +328,8 @@ void ActivateSetup(bool bullish, double swingH, double swingL)
 
 bool CheckInvalidation()
 {
-    double bid = SymbolInfoDouble(TradeSymbol, SYMBOL_BID);
-    double ask = SymbolInfoDouble(TradeSymbol, SYMBOL_ASK);
+    double bid = SymbolInfoDouble(g_symbol, SYMBOL_BID);
+    double ask = SymbolInfoDouble(g_symbol, SYMBOL_ASK);
 
     // Check if in entry zone
     bool inZone = false;
@@ -361,7 +383,7 @@ void CheckEntry()
 {
     if(pendingTicket > 0) return;  // Already have order
 
-    double bid = SymbolInfoDouble(TradeSymbol, SYMBOL_BID);
+    double bid = SymbolInfoDouble(g_symbol, SYMBOL_BID);
 
     // fib71 is always the higher price, fib79 is always the lower price
     // Entry zone: price between fib79 and fib71
@@ -381,14 +403,14 @@ void PlaceOrder()
 {
     double lot = FixedLot > 0 ? FixedLot : CalculateLot();
     double entry = (fib71 + fib79) / 2.0;
-    int digits = (int)SymbolInfoInteger(TradeSymbol, SYMBOL_DIGITS);
+    int digits = (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS);
     entry = NormalizeDouble(entry, digits);
 
     bool ok;
     if(isBullishSetup)
-        ok = trade.BuyLimit(lot, entry, TradeSymbol, fib0, fib100, ORDER_TIME_GTC, 0, "F71");
+        ok = trade.BuyLimit(lot, entry, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "F71");
     else
-        ok = trade.SellLimit(lot, entry, TradeSymbol, fib0, fib100, ORDER_TIME_GTC, 0, "F71");
+        ok = trade.SellLimit(lot, entry, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "F71");
 
     if(ok)
     {
@@ -411,14 +433,14 @@ double CalculateLot()
     double balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double risk = balance * RiskPercent / 100.0;
     double sl = MathAbs((fib71 + fib79) / 2.0 - fib100);
-    double point = SymbolInfoDouble(TradeSymbol, SYMBOL_POINT);
-    double tickValue = SymbolInfoDouble(TradeSymbol, SYMBOL_TRADE_TICK_VALUE);
+    double point = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
+    double tickValue = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
 
     double lot = risk / (sl / point * tickValue);
 
-    double min = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_MIN);
-    double max = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_MAX);
-    double step = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_STEP);
+    double min = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN);
+    double max = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MAX);
+    double step = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_STEP);
 
     lot = MathFloor(lot / step) * step;
     lot = MathMax(min, MathMin(max, lot));
@@ -434,31 +456,61 @@ void DrawLines()
 {
     ObjectsDeleteAll(0, "F71_");
 
-    color setupColor = isBullishSetup ? clrGreen : clrRed;
+    // Get BOS candle time and calculate end time
+    datetime bosTime = iTime(g_symbol, Timeframe, bosBarIdx);
+    datetime endTime = bosTime + PeriodSeconds(Timeframe) * LineExtensionBars;
 
-    // TP (0%) - target
-    HLine("F71_TP", fib0, clrLime, 2, "0% TP");
+    color setupColor = isBullishSetup ? ColorBullish : ColorBearish;
 
-    // Entry zone - same color as setup direction
-    HLine("F71_Entry1", fib71, setupColor, 1, "71%");
-    HLine("F71_Entry2", fib79, setupColor, 1, "79%");
+    // TP (0%) - target line
+    TrendLine("F71_TP", bosTime, fib0, endTime, fib0, ColorTP, LineWidthMain, "0% TP");
 
-    // SL (100%) - always red
-    HLine("F71_SL", fib100, clrRed, 2, "100% SL");
+    // Entry zone lines
+    TrendLine("F71_Entry71", bosTime, fib71, endTime, fib71, ColorEntry, LineWidthZone, "71%");
+    TrendLine("F71_Entry79", bosTime, fib79, endTime, fib79, ColorEntry, LineWidthZone, "79%");
 
-    // Swing points
+    // Fill entry zone with rectangle
+    RectCreate("F71_Zone", bosTime, fib71, endTime, fib79, setupColor);
+
+    // SL (100%) line
+    TrendLine("F71_SL", bosTime, fib100, endTime, fib100, ColorSL, LineWidthMain, "100% SL");
+
+    // Swing points arrows
     if(swingHighIdx >= 0)
         Arrow("F71_SH", swingHighIdx, swingHigh, clrRed, 233);  // Arrow down
     if(swingLowIdx >= 0)
         Arrow("F71_SLp", swingLowIdx, swingLow, clrGreen, 234); // Arrow up
 
     // BOS label
-    string bosText = isBullishSetup ? "🟢 BULLISH BOS" : "🔴 BEARISH BOS";
-    datetime bosTime = iTime(TradeSymbol, Timeframe, isBullishSetup ? swingLowIdx : swingHighIdx);
+    string bosText = isBullishSetup ? "🟢 BULLISH" : "🔴 BEARISH";
     double bosPrice = isBullishSetup ? swingLow : swingHigh;
     Label("F71_BOS", bosTime, bosPrice, bosText, setupColor);
 
     ChartRedraw(0);
+}
+
+void TrendLine(string name, datetime time1, double price1, datetime time2, double price2, color col, int width, string label)
+{
+    ObjectCreate(0, name, OBJ_TREND, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetString(0, name, OBJPROP_TEXT, label);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+}
+
+void RectCreate(string name, datetime time1, double price1, datetime time2, double price2, color col)
+{
+    ObjectCreate(0, name, OBJ_RECTANGLE, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_FILL, true);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+    // Make rectangle semi-transparent (using alpha)
+    long clr = col;
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
 }
 
 void Label(string name, datetime time, double price, string text, color col)
@@ -469,18 +521,9 @@ void Label(string name, datetime time, double price, string text, color col)
     ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
 }
 
-void HLine(string name, double price, color col, int width, string label)
-{
-    ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
-    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
-    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
-    ObjectSetString(0, name, OBJPROP_TEXT, label);
-    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, true);
-}
-
 void Arrow(string name, int bar, double price, color col, int code)
 {
-    datetime time = iTime(TradeSymbol, Timeframe, bar);
+    datetime time = iTime(g_symbol, Timeframe, bar);
     ObjectCreate(0, name, OBJ_ARROW, 0, time, price);
     ObjectSetInteger(0, name, OBJPROP_ARROWCODE, code);
     ObjectSetInteger(0, name, OBJPROP_COLOR, col);

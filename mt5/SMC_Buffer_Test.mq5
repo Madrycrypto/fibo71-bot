@@ -8,7 +8,9 @@
 
 // Run this script to discover SMC indicator buffer structure
 
-input string   TradeSymbol = "XAUUSD";
+input string   g_symbol = "";          // Symbol (empty = chart symbol)
+
+string g_symbol = "";
 input ENUM_TIMEFRAMES Timeframe = PERIOD_M5;
 input string   SMC_Name = "Smart Money Concepts";
 input int      TestBuffers = 20;     // Number of buffers to test
@@ -19,11 +21,15 @@ input int      LookbackCandles = 500; // How many candles to check
 //+------------------------------------------------------------------+
 void OnStart()
 {
+    // Auto-detect symbol from chart if not specified
+    g_symbol = (TradeSymbol == "") ? _Symbol : TradeSymbol;
+
     Print("══════════════════════════════════════════════════");
     Print("🔍 SMC Buffer Test - Extended");
+    Print("Symbol: ", g_symbol);
     Print("══════════════════════════════════════════════════");
 
-    int handle = iCustom(TradeSymbol, Timeframe, SMC_Name);
+    int handle = iCustom(g_symbol, Timeframe, SMC_Name);
     if(handle == INVALID_HANDLE)
     {
         Print("❌ Cannot load indicator: ", SMC_Name);

@@ -18,7 +18,10 @@
 
 // Basic Settings
 input string   Section1 = "════════ Basic Settings ════════";
-input string   Symbol = "EURUSD";                    // Trading Symbol
+input string   TradeSymbol = "";                    // Symbol (empty = chart symbol)
+
+// Working symbol (auto-set from chart if input is empty)
+string g_symbol = "";
 input ENUM_TIMEFRAMES Timeframe = PERIOD_H4;         // Trading Timeframe
 input int      MagicNumber = 710071;                 // Magic Number
 input string   TradeComment = "CP2.0 Fibo71";        // Trade Comment
@@ -115,15 +118,18 @@ bool setupActive = false;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // Auto-detect symbol from chart if not specified
+    g_symbol = (TradeSymbol == "") ? _Symbol : TradeSymbol;
+
     // Initialize trade
     trade.SetExpertMagicNumber(MagicNumber);
     trade.SetDeviationInPoints(20);
     trade.SetTypeFilling(ORDER_FILLING_IOC);
 
     // Check symbol
-    if(!symbolInfo.Name(Symbol))
+    if(!symbolInfo.Name(g_symbol))
     {
-        Print("❌ Symbol not found: ", Symbol);
+        Print("❌ Symbol not found: ", g_symbol);
         return INIT_FAILED;
     }
 
@@ -136,7 +142,7 @@ int OnInit()
     Print("══════════════════════════════════════════════════");
     Print("🤖 Fibo 71 Bot - CP 2.0 Strategy");
     Print("══════════════════════════════════════════════════");
-    Print("Symbol: ", Symbol, " | Timeframe: ", EnumToString(Timeframe));
+    Print("Symbol: ", g_symbol, " | Timeframe: ", EnumToString(Timeframe));
     Print("Risk: ", RiskPercent, "% | Entry Zone: ", FibEntryMin * 100, "% - ", FibEntryMax * 100, "%");
     Print("Filters: Imbalance = ", EnableImbalance ? "ON" : "OFF",
           " | Liquidity Sweep = ", EnableLiquiditySweep ? "ON" : "OFF");
@@ -147,7 +153,7 @@ int OnInit()
     if(EnableTelegram)
     {
         string message = "🤖 <b>Fibo 71 Bot Started</b>\n\n";
-        message += "Symbol: " + Symbol + "\n";
+        message += "Symbol: " + g_symbol + "\n";
         message += "Timeframe: " + EnumToString(Timeframe) + "\n";
         message += "Risk: " + DoubleToString(RiskPercent, 1) + "%\n";
         message += "Entry Zone: " + DoubleToString(FibEntryMin * 100, 0) + "% - " + DoubleToString(FibEntryMax * 100, 0) + "%\n";
@@ -229,7 +235,7 @@ void OnTick()
 void AnalyzeMarket()
 {
     // Get historical data
-    int bars = iBars(Symbol, Timeframe);
+    int bars = iBars(g_symbol, Timeframe);
     if(bars < BOSLookback + 10)
         return;
 
@@ -345,11 +351,11 @@ void FindSwingPoints()
     // Look for swing high (higher than 2 candles on each side)
     for(int i = 2; i < BOSLookback - 2; i++)
     {
-        double h = iHigh(Symbol, Timeframe, i);
-        double h1 = iHigh(Symbol, Timeframe, i + 1);
-        double h2 = iHigh(Symbol, Timeframe, i + 2);
-        double h_1 = iHigh(Symbol, Timeframe, i - 1);
-        double h_2 = iHigh(Symbol, Timeframe, i - 2);
+        double h = iHigh(g_symbol, Timeframe, i);
+        double h1 = iHigh(g_symbol, Timeframe, i + 1);
+        double h2 = iHigh(g_symbol, Timeframe, i + 2);
+        double h_1 = iHigh(g_symbol, Timeframe, i - 1);
+        double h_2 = iHigh(g_symbol, Timeframe, i - 2);
 
         if(h > h1 && h > h2 && h > h_1 && h > h_2)
         {
@@ -362,11 +368,11 @@ void FindSwingPoints()
     // Look for swing low (lower than 2 candles on each side)
     for(int i = 2; i < BOSLookback - 2; i++)
     {
-        double l = iLow(Symbol, Timeframe, i);
-        double l1 = iLow(Symbol, Timeframe, i + 1);
-        double l2 = iLow(Symbol, Timeframe, i + 2);
-        double l_1 = iLow(Symbol, Timeframe, i - 1);
-        double l_2 = iLow(Symbol, Timeframe, i - 2);
+        double l = iLow(g_symbol, Timeframe, i);
+        double l1 = iLow(g_symbol, Timeframe, i + 1);
+        double l2 = iLow(g_symbol, Timeframe, i + 2);
+        double l_1 = iLow(g_symbol, Timeframe, i - 1);
+        double l_2 = iLow(g_symbol, Timeframe, i - 2);
 
         if(l < l1 && l < l2 && l < l_1 && l < l_2)
         {
@@ -382,7 +388,7 @@ void FindSwingPoints()
 //+------------------------------------------------------------------+
 void DetectBOS()
 {
-    double close = iClose(Symbol, Timeframe, 0);
+    double close = iClose(g_symbol, Timeframe, 0);
 
     // Reset (only if no active setup)
     if(!setupActive)
@@ -416,19 +422,19 @@ void CheckFilters()
     bearishBOSConfirmed = false;
     liquiditySweep = false;
 
-    double point = SymbolInfoDouble(Symbol, SYMBOL_POINT);
+    double point = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
     double minImbalancePrice = MinImbalancePips * point * 10;
 
     // Check for imbalance
     if(EnableImbalance)
     {
         // Bearish imbalance: gap between candle 2 low and current high
-        double low2 = iLow(Symbol, Timeframe, 2);
-        double high0 = iHigh(Symbol, Timeframe, 0);
+        double low2 = iLow(g_symbol, Timeframe, 2);
+        double high0 = iHigh(g_symbol, Timeframe, 0);
 
         // Bullish imbalance: gap between candle 2 high and current low
-        double high2 = iHigh(Symbol, Timeframe, 2);
-        double low0 = iLow(Symbol, Timeframe, 0);
+        double high2 = iHigh(g_symbol, Timeframe, 2);
+        double low0 = iLow(g_symbol, Timeframe, 0);
 
         if(bearishBOS && (low2 - high0) >= minImbalancePrice)
         {
@@ -456,8 +462,8 @@ void CheckFilters()
         {
             if(bearishBOSConfirmed)
             {
-                double h = iHigh(Symbol, Timeframe, i);
-                double c = iClose(Symbol, Timeframe, i);
+                double h = iHigh(g_symbol, Timeframe, i);
+                double c = iClose(g_symbol, Timeframe, i);
                 if(h > swingHigh && c < swingHigh)
                 {
                     liquiditySweep = true;
@@ -466,8 +472,8 @@ void CheckFilters()
             }
             else if(bullishBOSConfirmed)
             {
-                double l = iLow(Symbol, Timeframe, i);
-                double c = iClose(Symbol, Timeframe, i);
+                double l = iLow(g_symbol, Timeframe, i);
+                double c = iClose(g_symbol, Timeframe, i);
                 if(l < swingLow && c > swingLow)
                 {
                     liquiditySweep = true;
@@ -654,15 +660,15 @@ void PlaceLimitOrder()
     }
 
     // Normalize prices
-    double point = SymbolInfoDouble(Symbol, SYMBOL_POINT);
-    int digits = (int)SymbolInfoInteger(Symbol, SYMBOL_DIGITS);
+    double point = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
+    int digits = (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS);
 
     entryPrice = NormalizeDouble(entryPrice, digits);
     sl = NormalizeDouble(sl, digits);
     tp = NormalizeDouble(tp, digits);
 
     // Place order
-    if(trade.OrderOpen(Symbol, orderType, lotSize, entryPrice, sl, tp, ORDER_TIME_GTC, 0, TradeComment))
+    if(trade.OrderOpen(g_symbol, orderType, lotSize, entryPrice, sl, tp, ORDER_TIME_GTC, 0, TradeComment))
     {
         pendingTicket = trade.ResultOrder();
         dailyTrades++;
@@ -675,7 +681,7 @@ void PlaceLimitOrder()
         if(EnableTelegram)
         {
             string message = dirEmoji + " <b>Order Placed</b>\n\n";
-            message += "Symbol: " + Symbol + "\n";
+            message += "Symbol: " + g_symbol + "\n";
             message += "Type: " + dirText + "\n";
             message += "Lots: " + DoubleToString(lotSize, 2) + "\n";
             message += "Entry: " + DoubleToString(entryPrice, digits) + "\n";
@@ -728,15 +734,15 @@ double CalculateLotSize()
 
     // Use middle of entry zone for SL calculation
     double entryMid = (fib71 + fib79) / 2.0;
-    double slPips = MathAbs(entryMid - fib100) / SymbolInfoDouble(Symbol, SYMBOL_POINT) / 10;
+    double slPips = MathAbs(entryMid - fib100) / SymbolInfoDouble(g_symbol, SYMBOL_POINT) / 10;
 
-    double pipValue = SymbolInfoDouble(Symbol, SYMBOL_TRADE_TICK_VALUE);
+    double pipValue = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
     double lotSize = risk / (slPips * pipValue);
 
     // Normalize
-    double minLot = SymbolInfoDouble(Symbol, SYMBOL_VOLUME_MIN);
-    double maxLot = SymbolInfoDouble(Symbol, SYMBOL_VOLUME_MAX);
-    double stepLot = SymbolInfoDouble(Symbol, SYMBOL_VOLUME_STEP);
+    double minLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MAX);
+    double stepLot = SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_STEP);
 
     lotSize = MathFloor(lotSize / stepLot) * stepLot;
     lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
@@ -755,10 +761,10 @@ void SendSetupNotification()
     string dirEmoji = bearishBOSConfirmed ? "🔴" : "🟢";
     string dirText = bearishBOSConfirmed ? "BEARISH" : "BULLISH";
 
-    int digits = (int)SymbolInfoInteger(Symbol, SYMBOL_DIGITS);
+    int digits = (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS);
 
     string message = dirEmoji + " <b>BOS Detected</b>\n\n";
-    message += "Symbol: " + Symbol + "\n";
+    message += "Symbol: " + g_symbol + "\n";
     message += "Direction: " + dirText + "\n";
     message += "\n<b>Fibonacci Levels:</b>\n";
     message += "• TP (0%): " + DoubleToString(fib0, digits) + "\n";

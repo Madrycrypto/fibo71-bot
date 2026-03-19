@@ -6,7 +6,9 @@
 #property version   "1.00"
 #property strict
 
-input string   TradeSymbol = "XAUUSD";
+input string   g_symbol = "";          // Symbol (empty = chart symbol)
+
+string g_symbol = "";
 input ENUM_TIMEFRAMES Timeframe = PERIOD_M5;
 input string   SMC_Name = "Smart Money Concepts";
 input int      Lookback = 100;  // Candles to analyze
@@ -16,11 +18,15 @@ input int      Lookback = 100;  // Candles to analyze
 //+------------------------------------------------------------------+
 void OnStart()
 {
+    // Auto-detect symbol from chart if not specified
+    g_symbol = (TradeSymbol == "") ? _Symbol : TradeSymbol;
+
     Print("══════════════════════════════════════════════════");
     Print("🔍 SMC BOS Buffer Analyzer");
+    Print("Symbol: ", g_symbol);
     Print("══════════════════════════════════════════════════");
 
-    int handle = iCustom(TradeSymbol, Timeframe, SMC_Name);
+    int handle = iCustom(g_symbol, Timeframe, SMC_Name);
     if(handle == INVALID_HANDLE)
     {
         Print("❌ Cannot load indicator");
@@ -53,9 +59,9 @@ void OnStart()
     {
         if(buf7[i] != 0 && buf7[i] != EMPTY_VALUE)
         {
-            double high = iHigh(TradeSymbol, Timeframe, i);
-            double low = iLow(TradeSymbol, Timeframe, i);
-            double close = iClose(TradeSymbol, Timeframe, i);
+            double high = iHigh(g_symbol, Timeframe, i);
+            double low = iLow(g_symbol, Timeframe, i);
+            double close = iClose(g_symbol, Timeframe, i);
 
             // Check if value is near high (bullish BOS) or low (bearish BOS)
             string signal = "";
