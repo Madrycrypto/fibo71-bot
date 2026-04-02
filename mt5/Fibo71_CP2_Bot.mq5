@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Fibo71 Bot"
 #property link      ""
-#property version   "1.00"
+#property version   "1.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -60,6 +60,7 @@ input string   TelegramChatID = "";                  // Chat ID (from @userinfob
 
 // Display Settings
 input string   Section7 = "════════ Display Settings ════════";
+input int      LineExtensionBars = 50;               // How far lines extend (bars)
 input bool     ShowFibLines = true;                  // Show Fibonacci Lines
 input bool     ShowLabels = true;                    // Show Labels on Chart
 input color    ColorBullish = clrGreen;              // Bullish Color
@@ -67,6 +68,8 @@ input color    ColorBearish = clrRed;                // Bearish Color
 input color    ColorTP = clrLime;                    // TP Line Color
 input color    ColorSL = clrRed;                     // SL Line Color
 input color    ColorEntry = clrBlue;                 // Entry Zone Color
+input int      LineWidthMain = 2;                    // TP/SL line width
+input int      LineWidthZone = 1;                    // Entry zone line width
 
 //+------------------------------------------------------------------+
 //| GLOBAL VARIABLES                                                  |
@@ -113,6 +116,9 @@ datetime lastTradeDate = 0;
 ulong pendingTicket = 0;
 bool setupActive = false;
 
+// BOS bar for line drawing
+int bosBarIdx = 0;
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
@@ -140,10 +146,11 @@ int OnInit()
     }
 
     Print("══════════════════════════════════════════════════");
-    Print("🤖 Fibo 71 Bot - CP 2.0 Strategy");
+    Print("🤖 Fibo 71 Bot - CP 2.0 Strategy v1.20");
     Print("══════════════════════════════════════════════════");
     Print("Symbol: ", g_symbol, " | Timeframe: ", EnumToString(Timeframe));
     Print("Risk: ", RiskPercent, "% | Entry Zone: ", FibEntryMin * 100, "% - ", FibEntryMax * 100, "%");
+    Print("Line Extension: ", LineExtensionBars, " bars");
     Print("Filters: Imbalance = ", EnableImbalance ? "ON" : "OFF",
           " | Liquidity Sweep = ", EnableLiquiditySweep ? "ON" : "OFF");
     Print("Telegram: ", EnableTelegram ? "ENABLED" : "DISABLED");
@@ -254,6 +261,7 @@ void AnalyzeMarket()
     // Calculate Fibonacci levels
     if(bullishBOSConfirmed || bearishBOSConfirmed)
     {
+        bosBarIdx = 1;  // BOS confirmed on previous candle
         CalculateFibonacci();
         DrawFibonacciLines();
 
@@ -522,37 +530,94 @@ void DrawFibonacciLines()
     if(!ShowFibLines)
         return;
 
+    // Check if we have enough bars
+    int bars = iBars(g_symbol, Timeframe);
+    if(bars < bosBarIdx + 1)
+        return;
+
     // Delete old objects
     ObjectsDeleteAll(0, prefix);
 
-    color lineColor = bearishBOSConfirmed ? ColorBearish : ColorBullish;
+    // Get BOS candle time and calculate end time
+    datetime bosTime = iTime(g_symbol, Timeframe, bosBarIdx);
+    datetime endTime = bosTime + PeriodSeconds(Timeframe) * LineExtensionBars;
 
-    // Draw only 3 levels: 0%, entry zone, 100%
+    color setupColor = bearishBOSConfirmed ? ColorBearish : ColorBullish;
+
     // TP line (0%)
-    HLineCreate(0, prefix + "TP_0", 0, fib0, ColorTP, STYLE_SOLID, 2, "TP (0%)", true);
+    TrendLine(prefix + "TP", bosTime, fib0, endTime, fib0, ColorTP, LineWidthMain, "0% TP");
 
-    // Entry zone - just top and bottom
-    HLineCreate(0, prefix + "Entry_71", 0, fib71, ColorEntry, STYLE_SOLID, 1, "Entry 71%", true);
-    HLineCreate(0, prefix + "Entry_79", 0, fib79, ColorEntry, STYLE_SOLID, 1, "Entry 79%", true);
+    // Entry zone lines
+    TrendLine(prefix + "Entry71", bosTime, fib71, endTime, fib71, ColorEntry, LineWidthZone, "71%");
+    TrendLine(prefix + "Entry79", bosTime, fib79, endTime, fib79, ColorEntry, LineWidthZone, "79%");
+
+    // Fill entry zone with rectangle
+    RectCreate(prefix + "Zone", bosTime, fib71, endTime, fib79, setupColor);
 
     // SL line (100%)
-    HLineCreate(0, prefix + "SL_100", 0, fib100, ColorSL, STYLE_SOLID, 2, "SL (100%)", true);
+    TrendLine(prefix + "SL", bosTime, fib100, endTime, fib100, ColorSL, LineWidthMain, "100% SL");
 
     // Draw swing points
     if(ShowLabels)
     {
+        datetime shTime = iTime(g_symbol, Timeframe, swingHighIdx);
+        datetime slTime = iTime(g_symbol, Timeframe, swingLowIdx);
+
         string labelName = prefix + "SwingHigh";
-        ObjectCreate(0, labelName, OBJ_ARROW_DOWN, 0, Time[swingHighIdx], swingHigh);
+        ObjectCreate(0, labelName, OBJ_ARROW_DOWN, 0, shTime, swingHigh);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrRed);
         ObjectSetInteger(0, labelName, OBJPROP_WIDTH, 2);
 
         labelName = prefix + "SwingLow";
-        ObjectCreate(0, labelName, OBJ_ARROW_UP, 0, Time[swingLowIdx], swingLow);
+        ObjectCreate(0, labelName, OBJ_ARROW_UP, 0, slTime, swingLow);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrGreen);
         ObjectSetInteger(0, labelName, OBJPROP_WIDTH, 2);
     }
 
+    // BOS label
+    string bosText = bearishBOSConfirmed ? "🔴 BEARISH" : "🟢 BULLISH";
+    double bosPrice = bearishBOSConfirmed ? swingHigh : swingLow;
+    Label(prefix + "BOS", bosTime, bosPrice, bosText, setupColor);
+
     ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| Trend Line helper                                                 |
+//+------------------------------------------------------------------+
+void TrendLine(string name, datetime time1, double price1, datetime time2, double price2, color col, int width, string label)
+{
+    ObjectCreate(0, name, OBJ_TREND, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetString(0, name, OBJPROP_TEXT, label);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+}
+
+//+------------------------------------------------------------------+
+//| Rectangle helper                                                  |
+//+------------------------------------------------------------------+
+void RectCreate(string name, datetime time1, double price1, datetime time2, double price2, color col)
+{
+    ObjectCreate(0, name, OBJ_RECTANGLE, 0, time1, price1, time2, price2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_FILL, true);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+}
+
+//+------------------------------------------------------------------+
+//| Label helper                                                      |
+//+------------------------------------------------------------------+
+void Label(string name, datetime time, double price, string text, color col)
+{
+    ObjectCreate(0, name, OBJ_TEXT, 0, time, price);
+    ObjectSetString(0, name, OBJPROP_TEXT, text);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
 }
 
 //+------------------------------------------------------------------+

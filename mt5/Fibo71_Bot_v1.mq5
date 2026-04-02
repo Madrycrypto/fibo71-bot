@@ -3,7 +3,7 @@
 //|                                    Clean BOS + Fibonacci Bot      |
 //+------------------------------------------------------------------+
 #property copyright "Fibo71 Bot v1"
-#property version   "1.20"
+#property version   "1.30"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,9 +20,8 @@ input int      MagicNumber = 710071;
 
 // BOS Detection - Adjust these to match SMC indicator
 input string   Section2 = "═══ BOS Detection ═══";
-input int      SwingLookback = 3;          // Candles on each side for swing point
-input int      BOSLookback = 50;           // Max age of swing point (bars)
-input int      SwingMinDistance = 5;       // Min distance between swings (bars)
+input int      SwingLookback = 2;          // Candles on each side for swing point
+input int      BOSLookback = 100;          // Max age of swing point (bars)
 
 // Fibonacci
 input string   Section3 = "═══ Fibonacci ═══";
@@ -60,18 +59,22 @@ CTrade trade;
 // Working symbol (auto-set from chart if input is empty)
 string g_symbol = "";
 
-// Swing points
-double swingHigh = 0;
-double swingLow = 0;
-int swingHighIdx = -1;
-int swingLowIdx = -1;
+// Swing points structure
+struct SwingPoint {
+    double price;
+    int    barIdx;
+    bool   isHigh;  // true = swing high, false = swing low
+    bool   valid;
+};
+
+SwingPoint lastSwingHigh;
+SwingPoint lastSwingLow;
+SwingPoint prevSwingHigh;
+SwingPoint prevSwingLow;
 
 // Setup
 bool setupActive = false;
 bool isBullishSetup = false;
-bool bosSignalDetected = false;      // BOS detected, waiting for retracement
-bool bosSignalIsBullish = false;     // Direction of BOS signal
-double bosLevel = 0;                  // The BOS level (swing high or low)
 
 // Fibonacci
 double fib0 = 0;      // TP (0%)
@@ -99,7 +102,7 @@ int OnInit()
     trade.SetTypeFilling(ORDER_FILLING_IOC);
 
     Print("══════════════════════════════════════════════════");
-    Print("🤖 Fibo71 Bot v1.20");
+    Print("🤖 Fibo71 Bot v1.30 - BOS Detection");
     Print("══════════════════════════════════════════════════");
     Print("Symbol: ", g_symbol, " | TF: ", EnumToString(Timeframe));
     Print("Swing Lookback: ", SwingLookback, " | BOS Lookback: ", BOSLookback);
@@ -141,143 +144,152 @@ void OnTick()
     lastBar = iTime(g_symbol, Timeframe, 0);
 
     // Analyze
-    FindSwingPoints();
+    FindAllSwingPoints();
     DetectBOS();
 }
 
 //═══════════════════════════════════════════════════════════════════════════════
-// FIND SWING POINTS
+// FIND ALL SWING POINTS (Improved)
 //═══════════════════════════════════════════════════════════════════════════════
 
-void FindSwingPoints()
+void FindAllSwingPoints()
 {
-    swingHigh = 0;
-    swingLow = 0;
-    swingHighIdx = -1;
-    swingLowIdx = -1;
+    // Reset
+    lastSwingHigh.valid = false;
+    lastSwingLow.valid = false;
+    prevSwingHigh.valid = false;
+    prevSwingLow.valid = false;
 
-    int lookback = BOSLookback;
+    int foundHighs = 0;
+    int foundLows = 0;
 
-    // Find most recent swing high
-    for(int i = SwingLookback; i < lookback - SwingLookback; i++)
+    // Find swing points in order (most recent first)
+    for(int i = SwingLookback; i < BOSLookback - SwingLookback; i++)
     {
-        bool isSwing = true;
-        double h = iHigh(g_symbol, Timeframe, i);
-
-        // Check candles on each side
-        for(int j = 1; j <= SwingLookback; j++)
+        // Check for swing high
+        if(foundHighs < 2 && IsSwingHigh(i))
         {
-            if(iHigh(g_symbol, Timeframe, i+j) >= h ||
-               iHigh(g_symbol, Timeframe, i-j) >= h)
+            if(foundHighs == 0)
             {
-                isSwing = false;
-                break;
+                lastSwingHigh.price = iHigh(g_symbol, Timeframe, i);
+                lastSwingHigh.barIdx = i;
+                lastSwingHigh.isHigh = true;
+                lastSwingHigh.valid = true;
+                foundHighs = 1;
+            }
+            else if(foundHighs == 1)
+            {
+                prevSwingHigh.price = iHigh(g_symbol, Timeframe, i);
+                prevSwingHigh.barIdx = i;
+                prevSwingHigh.isHigh = true;
+                prevSwingHigh.valid = true;
+                foundHighs = 2;
             }
         }
 
-        if(isSwing)
+        // Check for swing low
+        if(foundLows < 2 && IsSwingLow(i))
         {
-            swingHigh = h;
-            swingHighIdx = i;
-            break;
-        }
-    }
-
-    // Find most recent swing low
-    for(int i = SwingLookback; i < lookback - SwingLookback; i++)
-    {
-        bool isSwing = true;
-        double l = iLow(g_symbol, Timeframe, i);
-
-        for(int j = 1; j <= SwingLookback; j++)
-        {
-            if(iLow(g_symbol, Timeframe, i+j) <= l ||
-               iLow(g_symbol, Timeframe, i-j) <= l)
+            if(foundLows == 0)
             {
-                isSwing = false;
-                break;
+                lastSwingLow.price = iLow(g_symbol, Timeframe, i);
+                lastSwingLow.barIdx = i;
+                lastSwingLow.isHigh = false;
+                lastSwingLow.valid = true;
+                foundLows = 1;
+            }
+            else if(foundLows == 1)
+            {
+                prevSwingLow.price = iLow(g_symbol, Timeframe, i);
+                prevSwingLow.barIdx = i;
+                prevSwingLow.isHigh = false;
+                prevSwingLow.valid = true;
+                foundLows = 2;
             }
         }
 
-        if(isSwing)
-        {
-            swingLow = l;
-            swingLowIdx = i;
-            break;
-        }
+        // Stop if we found everything
+        if(foundHighs >= 2 && foundLows >= 2) break;
     }
 }
 
 //═══════════════════════════════════════════════════════════════════════════════
-// DETECT BOS
+// IS SWING HIGH/LOW HELPERS
+//═══════════════════════════════════════════════════════════════════════════════
+
+bool IsSwingHigh(int bar)
+{
+    double h = iHigh(g_symbol, Timeframe, bar);
+
+    // Check if this bar's high is higher than surrounding bars
+    for(int j = 1; j <= SwingLookback; j++)
+    {
+        if(iHigh(g_symbol, Timeframe, bar + j) >= h) return false;
+        if(iHigh(g_symbol, Timeframe, bar - j) >= h) return false;
+    }
+    return true;
+}
+
+bool IsSwingLow(int bar)
+{
+    double l = iLow(g_symbol, Timeframe, bar);
+
+    // Check if this bar's low is lower than surrounding bars
+    for(int j = 1; j <= SwingLookback; j++)
+    {
+        if(iLow(g_symbol, Timeframe, bar + j) <= l) return false;
+        if(iLow(g_symbol, Timeframe, bar - j) <= l) return false;
+    }
+    return true;
+}
+
+//═══════════════════════════════════════════════════════════════════════════════
+// DETECT BOS (Simplified SMC Logic)
 //═══════════════════════════════════════════════════════════════════════════════
 
 void DetectBOS()
 {
-    if(swingHigh == 0 || swingLow == 0) return;
-    if(swingHighIdx < 0 || swingLowIdx < 0) return;
+    if(setupActive) return;  // Already have a setup
 
-    // Check swing points are far enough apart
-    int dist = MathAbs(swingHighIdx - swingLowIdx);
-    if(dist < SwingMinDistance) return;
+    // Need valid swing points
+    if(!lastSwingHigh.valid || !lastSwingLow.valid) return;
 
-    double close = iClose(g_symbol, Timeframe, 0);
+    double close = iClose(g_symbol, Timeframe, 1);  // Use candle 1 (confirmed)
+    double high = iHigh(g_symbol, Timeframe, 1);
+    double low = iLow(g_symbol, Timeframe, 1);
 
-    // === BULLISH BOS ===
-    // Swing LOW is more recent (lower index), price breaks above swing HIGH
-    if(swingLowIdx < swingHighIdx && close > swingHigh)
+    // ================================================================
+    // BULLISH BOS: Price breaks above swing HIGH
+    // - Last swing LOW is more recent than last swing HIGH
+    // - Price closes above the swing HIGH
+    // ================================================================
+    if(lastSwingLow.barIdx < lastSwingHigh.barIdx)  // Low is more recent
     {
-        // BOS signal detected!
-        bosSignalDetected = true;
-        bosSignalIsBullish = true;
-        bosLevel = swingHigh;  // The level to watch for retracement
+        if(close > lastSwingHigh.price)  // Break above swing high
+        {
+            // BULLISH BOS detected!
+            Print("🟢 BULLISH BOS: Close ", close, " broke above ", lastSwingHigh.price);
 
-        Print("🔵 BULLISH BOS signal - waiting for retracement below ", swingHigh);
+            // Setup: swing HIGH is 0% (TP), swing LOW is 100% (SL)
+            ActivateBullishSetup(lastSwingHigh.price, lastSwingLow.price);
+        }
     }
 
-    // === BEARISH BOS ===
-    // Swing HIGH is more recent (lower index), price breaks below swing LOW
-    if(swingHighIdx < swingLowIdx && close < swingLow)
+    // ================================================================
+    // BEARISH BOS: Price breaks below swing LOW
+    // - Last swing HIGH is more recent than last swing LOW
+    // - Price closes below the swing LOW
+    // ================================================================
+    if(lastSwingHigh.barIdx < lastSwingLow.barIdx)  // High is more recent
     {
-        // BOS signal detected!
-        bosSignalDetected = true;
-        bosSignalIsBullish = false;
-        bosLevel = swingLow;  // The level to watch for retracement
+        if(close < lastSwingLow.price)  // Break below swing low
+        {
+            // BEARISH BOS detected!
+            Print("🔴 BEARISH BOS: Close ", close, " broke below ", lastSwingLow.price);
 
-        Print("🔵 BEARISH BOS signal - waiting for retracement above ", swingLow);
-    }
-
-    // === CHECK RETRACEMENT CONFIRMATION ===
-    if(bosSignalDetected && !setupActive)
-    {
-        CheckRetracementConfirmation();
-    }
-}
-
-//═══════════════════════════════════════════════════════════════════════════════
-// CHECK RETRACEMENT CONFIRMATION
-//═══════════════════════════════════════════════════════════════════════════════
-
-void CheckRetracementConfirmation()
-{
-    double close = iClose(g_symbol, Timeframe, 0);
-
-    // BULLISH: Wait for price to close BACK BELOW the BOS level (swing HIGH)
-    if(bosSignalIsBullish && close < bosLevel)
-    {
-        // Retracement confirmed! Draw Fibonacci
-        // 100% = swing HIGH (BOS level), 0% = swing LOW
-        ActivateSetup(true, swingHigh, swingLow);
-        bosSignalDetected = false;  // Reset signal
-    }
-
-    // BEARISH: Wait for price to close BACK ABOVE the BOS level (swing LOW)
-    if(!bosSignalIsBullish && close > bosLevel)
-    {
-        // Retracement confirmed! Draw Fibonacci
-        // 100% = swing HIGH, 0% = swing LOW (BOS level)
-        ActivateSetup(false, swingHigh, swingLow);
-        bosSignalDetected = false;  // Reset signal
+            // Setup: swing LOW is 0% (TP), swing HIGH is 100% (SL)
+            ActivateBearishSetup(lastSwingHigh.price, lastSwingLow.price);
+        }
     }
 }
 
@@ -285,41 +297,50 @@ void CheckRetracementConfirmation()
 // ACTIVATE SETUP
 //═══════════════════════════════════════════════════════════════════════════════
 
-void ActivateSetup(bool bullish, double swingH, double swingL)
+void ActivateBullishSetup(double swingH, double swingL)
 {
-    if(setupActive) return;  // Already have active setup
+    if(setupActive) return;
 
     double range = swingH - swingL;
 
-    if(bullish)
-    {
-        // BULLISH: TP at swing HIGH, SL at swing LOW
-        // Entry zone is 71-79% retracement from HIGH toward LOW
-        fib0 = swingH;                              // TP (0%) = swing HIGH
-        fib100 = swingL;                            // SL (100%) = swing LOW
-        fib71 = swingH - range * FibEntryMin;       // Higher entry (closer to HIGH)
-        fib79 = swingH - range * FibEntryMax;       // Lower entry (closer to LOW)
-    }
-    else
-    {
-        // BEARISH: TP at swing LOW, SL at swing HIGH
-        // Entry zone is 71-79% retracement from LOW toward HIGH
-        fib0 = swingL;                              // TP (0%) = swing LOW
-        fib100 = swingH;                            // SL (100%) = swing HIGH
-        fib71 = swingL + range * FibEntryMin;       // Lower entry (closer to LOW)
-        fib79 = swingL + range * FibEntryMax;       // Higher entry (closer to HIGH)
-    }
+    fib0 = swingH;                              // TP (0%) = swing HIGH
+    fib100 = swingL;                            // SL (100%) = swing LOW
+    fib71 = swingH - range * FibEntryMin;       // Entry zone start
+    fib79 = swingH - range * FibEntryMax;       // Entry zone end
 
-    isBullishSetup = bullish;
+    isBullishSetup = true;
     setupActive = true;
-    bosBarIdx = 1;  // BOS confirmed on previous candle
+    bosBarIdx = 1;
 
     DrawLines();
     PrintSetup();
-    SendTelegram("🔵 NEW SETUP: " + (bullish ? "BULLISH" : "BEARISH") +
-                 "\n0% (TP): " + DoubleToString(fib0, 5) +
+
+    SendTelegram("🟢 BULLISH BOS\nTP: " + DoubleToString(fib0, 5) +
                  "\nEntry: " + DoubleToString(fib79, 5) + " - " + DoubleToString(fib71, 5) +
-                 "\n100% (SL): " + DoubleToString(fib100, 5));
+                 "\nSL: " + DoubleToString(fib100, 5));
+}
+
+void ActivateBearishSetup(double swingH, double swingL)
+{
+    if(setupActive) return;
+
+    double range = swingH - swingL;
+
+    fib0 = swingL;                              // TP (0%) = swing LOW
+    fib100 = swingH;                            // SL (100%) = swing HIGH
+    fib71 = swingL + range * FibEntryMin;       // Entry zone start
+    fib79 = swingL + range * FibEntryMax;       // Entry zone end
+
+    isBullishSetup = false;
+    setupActive = true;
+    bosBarIdx = 1;
+
+    DrawLines();
+    PrintSetup();
+
+    SendTelegram("🔴 BEARISH BOS\nTP: " + DoubleToString(fib0, 5) +
+                 "\nEntry: " + DoubleToString(fib71, 5) + " - " + DoubleToString(fib79, 5) +
+                 "\nSL: " + DoubleToString(fib100, 5));
 }
 
 //═══════════════════════════════════════════════════════════════════════════════
@@ -332,11 +353,9 @@ bool CheckInvalidation()
     double ask = SymbolInfoDouble(g_symbol, SYMBOL_ASK);
 
     // Check if in entry zone
-    bool inZone = false;
-    if(isBullishSetup)
-        inZone = (bid >= fib79 && bid <= fib71);
-    else
-        inZone = (bid >= fib79 && bid <= fib71);
+    double higherEntry = MathMax(fib71, fib79);
+    double lowerEntry = MathMin(fib71, fib79);
+    bool inZone = (bid >= lowerEntry && bid <= higherEntry);
 
     if(inZone) return false;  // Safe - in entry zone
 
@@ -385,9 +404,11 @@ void CheckEntry()
 
     double bid = SymbolInfoDouble(g_symbol, SYMBOL_BID);
 
-    // fib71 is always the higher price, fib79 is always the lower price
+    double higherEntry = MathMax(fib71, fib79);
+    double lowerEntry = MathMin(fib71, fib79);
+
     // Entry zone: price between fib79 and fib71
-    bool inZone = (bid >= fib79 && bid <= fib71);
+    bool inZone = (bid >= lowerEntry && bid <= higherEntry);
 
     if(inZone)
     {
@@ -454,6 +475,11 @@ double CalculateLot()
 
 void DrawLines()
 {
+    // Check if we have enough bars
+    int bars = iBars(g_symbol, Timeframe);
+    if(bars < bosBarIdx + 1)
+        return;
+
     ObjectsDeleteAll(0, "F71_");
 
     // Get BOS candle time and calculate end time
@@ -476,14 +502,14 @@ void DrawLines()
     TrendLine("F71_SL", bosTime, fib100, endTime, fib100, ColorSL, LineWidthMain, "100% SL");
 
     // Swing points arrows
-    if(swingHighIdx >= 0)
-        Arrow("F71_SH", swingHighIdx, swingHigh, clrRed, 233);  // Arrow down
-    if(swingLowIdx >= 0)
-        Arrow("F71_SLp", swingLowIdx, swingLow, clrGreen, 234); // Arrow up
+    if(lastSwingHigh.valid)
+        Arrow("F71_SH", lastSwingHigh.barIdx, lastSwingHigh.price, clrRed, 233);
+    if(lastSwingLow.valid)
+        Arrow("F71_SL", lastSwingLow.barIdx, lastSwingLow.price, clrGreen, 234);
 
     // BOS label
     string bosText = isBullishSetup ? "🟢 BULLISH" : "🔴 BEARISH";
-    double bosPrice = isBullishSetup ? swingLow : swingHigh;
+    double bosPrice = isBullishSetup ? lastSwingLow.price : lastSwingHigh.price;
     Label("F71_BOS", bosTime, bosPrice, bosText, setupColor);
 
     ChartRedraw(0);
@@ -508,9 +534,6 @@ void RectCreate(string name, datetime time1, double price1, datetime time2, doub
     ObjectSetInteger(0, name, OBJPROP_BACK, true);
     ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
     ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
-    // Make rectangle semi-transparent (using alpha)
-    long clr = col;
-    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
 }
 
 void Label(string name, datetime time, double price, string text, color col)
@@ -538,8 +561,8 @@ void PrintSetup()
 {
     Print("══════════════════════════════════════════════════");
     Print(isBullishSetup ? "🟢 BULLISH BOS" : "🔴 BEARISH BOS");
-    Print("Swing High: ", swingHigh, " @ bar[", swingHighIdx, "]");
-    Print("Swing Low: ", swingLow, " @ bar[", swingLowIdx, "]");
+    Print("Swing High: ", lastSwingHigh.price, " @ bar[", lastSwingHigh.barIdx, "]");
+    Print("Swing Low: ", lastSwingLow.price, " @ bar[", lastSwingLow.barIdx, "]");
     Print("Fib 0% (TP): ", fib0);
     Print("Entry Zone: ", fib71, " - ", fib79);
     Print("Fib 100% (SL): ", fib100);
@@ -564,8 +587,6 @@ void SendTelegram(string msg)
     ArrayResize(req, ArraySize(req) - 1);
 
     WebRequest("POST", url, "Content-Type: application/x-www-form-urlencoded\r\n", 5000, req, res, resHeaders);
-
-    // Ignore response - fire and forget
 }
 
 string UrlEncode(string s)

@@ -1,9 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                          Fibo71_SMC_Bot.mq5       |
-//|                                    BOS from SMC + Fibonacci       |
+//|                                    BOS Detection + Fibonacci      |
+//|                                    Standalone (no external indi)  |
 //+------------------------------------------------------------------+
-#property copyright "Fibo71 Bot - SMC Integration"
-#property version   "1.20"
+#property copyright "Fibo71 Bot - Standalone"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -17,12 +18,13 @@
 // Basic Settings
 input string   Section1 = "════════ Basic Settings ════════";
 input string   TradeSymbol = "";                      // Symbol (empty = chart symbol)
-input ENUM_TIMEFRAMES Timeframe = PERIOD_M1;          // Trading Timeframe
+input ENUM_TIMEFRAMES Timeframe = PERIOD_M5;          // Trading Timeframe
 input int      MagicNumber = 710071;                  // Magic Number
 
-// SMC Indicator
-input string   Section2 = "════════ SMC Indicator ════════";
-input string   SMC_IndicatorName = "Smart Money Concepts";  // Indicator name
+// BOS Detection
+input string   Section2 = "════════ BOS Detection ════════";
+input int      SwingLookback = 2;                     // Candles on each side for swing
+input int      BOSLookback = 100;                     // Max lookback for swing points
 
 // Fibonacci Settings
 input string   Section3 = "════════ Fibonacci Settings ════════";
@@ -59,25 +61,18 @@ CTrade trade;
 CPositionInfo positionInfo;
 CSymbolInfo symbolInfo;
 
-// Working symbol (auto-set from chart if input is empty)
+// Working symbol
 string g_symbol = "";
 
-// SMC Indicator handle
-int smcHandle = INVALID_HANDLE;
-
-// BOS data from indicator
-struct BOSData
-{
-    bool       detected;
-    bool       isBullish;
-    double     swingHigh;
-    double     swingLow;
-    int        swingHighIdx;
-    int        swingLowIdx;
-    datetime   time;
+// Swing points structure
+struct SwingPoint {
+    double price;
+    int    barIdx;
+    bool   valid;
 };
 
-BOSData currentBOS;
+SwingPoint lastSwingHigh;
+SwingPoint lastSwingLow;
 
 // Fibonacci levels
 double fib0 = 0;      // TP (0%)
@@ -87,10 +82,11 @@ double fib100 = 0;    // SL (100%)
 
 // State
 bool setupActive = false;
+bool isBullishSetup = false;
 int dailyTrades = 0;
 datetime lastTradeDate = 0;
 ulong pendingTicket = 0;
-int bosBarIdx = 0;  // BOS bar for line drawing
+int bosBarIdx = 0;
 
 // Chart prefix
 string prefix = "Fibo71_";
@@ -100,35 +96,23 @@ string prefix = "Fibo71_";
 //+------------------------------------------------------------------+
 int OnInit()
 {
-    // Auto-detect symbol from chart if not specified
     g_symbol = (TradeSymbol == "") ? _Symbol : TradeSymbol;
 
-    // Initialize trade
     trade.SetExpertMagicNumber(MagicNumber);
     trade.SetDeviationInPoints(20);
     trade.SetTypeFilling(ORDER_FILLING_IOC);
 
-    // Check symbol
     if(!symbolInfo.Name(g_symbol))
     {
         Print("❌ Symbol not found: ", g_symbol);
         return INIT_FAILED;
     }
 
-    // Load SMC indicator
-    smcHandle = iCustom(g_symbol, Timeframe, SMC_IndicatorName);
-    if(smcHandle == INVALID_HANDLE)
-    {
-        Print("❌ Cannot load SMC indicator: ", SMC_IndicatorName);
-        Print("⚠️ Make sure indicator is in Indicators folder");
-        return INIT_FAILED;
-    }
-
     Print("══════════════════════════════════════════════════");
-    Print("🤖 Fibo 71 Bot - SMC Integration v1.20");
+    Print("🤖 Fibo 71 Bot - Standalone v2.00");
     Print("══════════════════════════════════════════════════");
     Print("Symbol: ", g_symbol, " | Timeframe: ", EnumToString(Timeframe));
-    Print("SMC Indicator: ", SMC_IndicatorName);
+    Print("Swing Lookback: ", SwingLookback, " | BOS Lookback: ", BOSLookback);
     Print("Entry Zone: ", FibEntryMin * 100, "% - ", FibEntryMax * 100, "%");
     Print("Line Extension: ", LineExtensionBars, " bars");
     Print("══════════════════════════════════════════════════");
@@ -141,11 +125,8 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-    if(smcHandle != INVALID_HANDLE)
-        IndicatorRelease(smcHandle);
-
     ObjectsDeleteAll(0, prefix);
-    Print("🛑 Fibo 71 SMC Bot stopped");
+    Print("🛑 Fibo 71 Bot stopped");
 }
 
 //+------------------------------------------------------------------+
@@ -164,6 +145,9 @@ void OnTick()
             CancelSetup();
             return;
         }
+
+        // Check entry
+        CheckEntry();
     }
 
     // Check for new candle
@@ -181,14 +165,9 @@ void OnTick()
             lastTradeDate = TimeCurrent();
         }
 
-        // Check for new BOS from indicator
-        CheckBOSFromIndicator();
-
-        // Check trade setup
-        if(setupActive)
-        {
-            CheckTradeSetup();
-        }
+        // Analyze
+        FindSwingPoints();
+        DetectBOS();
     }
 
     // Check pending order
@@ -197,177 +176,137 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
-//| Check BOS from SMC Indicator                                      |
+//| Find Swing Points                                                 |
 //+------------------------------------------------------------------+
-void CheckBOSFromIndicator()
+void FindSwingPoints()
 {
-    // SMC Indicator buffers (typical structure - may need adjustment)
-    // Buffer 0: BOS Bullish
-    // Buffer 1: BOS Bearish
-    // Buffer 2: Swing High
-    // Buffer 3: Swing Low
-    // etc.
+    lastSwingHigh.valid = false;
+    lastSwingLow.valid = false;
 
-    double bosBull[], bosBear[], swingH[], swingL[];
-
-    ArraySetAsSeries(bosBull, true);
-    ArraySetAsSeries(bosBear, true);
-    ArraySetAsSeries(swingH, true);
-    ArraySetAsSeries(swingL, true);
-
-    // Copy buffers - adjust indices based on actual indicator
-    if(CopyBuffer(smcHandle, 0, 0, 10, bosBull) < 0 ||
-       CopyBuffer(smcHandle, 1, 0, 10, bosBear) < 0)
+    // Find most recent swing high
+    for(int i = SwingLookback; i < BOSLookback - SwingLookback; i++)
     {
-        Print("⚠️ Cannot read SMC buffers");
-        return;
-    }
-
-    // Check for BOS signal on candle 1 (confirmed)
-    bool newBullishBOS = (bosBull[1] != 0 && bosBull[1] != EMPTY_VALUE);
-    bool newBearishBOS = (bosBear[1] != 0 && bosBear[1] != EMPTY_VALUE);
-
-    if(newBullishBOS || newBearishBOS)
-    {
-        // Get swing points from indicator
-        // This needs adjustment based on actual buffer structure
-        GetSwingPointsFromIndicator(newBullishBOS);
-
-        if(currentBOS.swingHigh > 0 && currentBOS.swingLow > 0)
+        if(IsSwingHigh(i))
         {
-            currentBOS.detected = true;
-            currentBOS.isBullish = newBullishBOS;
-            currentBOS.time = iTime(g_symbol, Timeframe, 1);
-            bosBarIdx = 1;  // BOS confirmed on previous candle
-
-            // Calculate Fibonacci
-            CalculateFibonacci();
-            DrawFibonacciLines();
-
-            setupActive = true;
-
-            Print(newBullishBOS ? "🟢 BULLISH BOS detected" : "🔴 BEARISH BOS detected");
-            Print("Swing H: ", currentBOS.swingHigh, " | Swing L: ", currentBOS.swingLow);
-            Print("Fib 0%: ", fib0, " | Entry: ", fib71, " - ", fib79, " | Fib 100%: ", fib100);
-
-            if(EnableTelegram)
-                SendBOSNotification();
-        }
-    }
-}
-
-//+------------------------------------------------------------------+
-//| Get Swing Points from Indicator                                   |
-//+------------------------------------------------------------------+
-void GetSwingPointsFromIndicator(bool isBullish)
-{
-    // Reset
-    currentBOS.swingHigh = 0;
-    currentBOS.swingLow = 0;
-
-    // Try to read swing points from indicator buffers
-    // Buffer indices may need adjustment
-    double swingH[], swingL[];
-    ArraySetAsSeries(swingH, true);
-    ArraySetAsSeries(swingL, true);
-
-    if(CopyBuffer(smcHandle, 2, 0, 100, swingH) < 0 ||
-       CopyBuffer(smcHandle, 3, 0, 100, swingL) < 0)
-    {
-        // Fallback: find manually
-        FindSwingPointsManually(isBullish);
-        return;
-    }
-
-    // Find most recent swing points
-    for(int i = 2; i < 100; i++)
-    {
-        if(swingH[i] != 0 && swingH[i] != EMPTY_VALUE)
-        {
-            currentBOS.swingHigh = swingH[i];
-            currentBOS.swingHighIdx = i;
+            lastSwingHigh.price = iHigh(g_symbol, Timeframe, i);
+            lastSwingHigh.barIdx = i;
+            lastSwingHigh.valid = true;
             break;
         }
     }
 
-    for(int i = 2; i < 100; i++)
+    // Find most recent swing low
+    for(int i = SwingLookback; i < BOSLookback - SwingLookback; i++)
     {
-        if(swingL[i] != 0 && swingL[i] != EMPTY_VALUE)
+        if(IsSwingLow(i))
         {
-            currentBOS.swingLow = swingL[i];
-            currentBOS.swingLowIdx = i;
-            break;
-        }
-    }
-
-    // If not found, use manual detection
-    if(currentBOS.swingHigh == 0 || currentBOS.swingLow == 0)
-    {
-        FindSwingPointsManually(isBullish);
-    }
-}
-
-//+------------------------------------------------------------------+
-//| Find Swing Points Manually (fallback)                             |
-//+------------------------------------------------------------------+
-void FindSwingPointsManually(bool isBullish)
-{
-    int lookback = 50;
-
-    // Find swing high
-    for(int i = 2; i < lookback - 2; i++)
-    {
-        double h = iHigh(g_symbol, Timeframe, i);
-        if(h > iHigh(g_symbol, Timeframe, i+1) &&
-           h > iHigh(g_symbol, Timeframe, i+2) &&
-           h > iHigh(g_symbol, Timeframe, i-1) &&
-           h > iHigh(g_symbol, Timeframe, i-2))
-        {
-            currentBOS.swingHigh = h;
-            currentBOS.swingHighIdx = i;
-            break;
-        }
-    }
-
-    // Find swing low
-    for(int i = 2; i < lookback - 2; i++)
-    {
-        double l = iLow(g_symbol, Timeframe, i);
-        if(l < iLow(g_symbol, Timeframe, i+1) &&
-           l < iLow(g_symbol, Timeframe, i+2) &&
-           l < iLow(g_symbol, Timeframe, i-1) &&
-           l < iLow(g_symbol, Timeframe, i-2))
-        {
-            currentBOS.swingLow = l;
-            currentBOS.swingLowIdx = i;
+            lastSwingLow.price = iLow(g_symbol, Timeframe, i);
+            lastSwingLow.barIdx = i;
+            lastSwingLow.valid = true;
             break;
         }
     }
 }
 
 //+------------------------------------------------------------------+
-//| Calculate Fibonacci Levels                                        |
+//| Is Swing High/Low                                                 |
 //+------------------------------------------------------------------+
-void CalculateFibonacci()
+bool IsSwingHigh(int bar)
 {
-    if(currentBOS.isBullish)
+    double h = iHigh(g_symbol, Timeframe, bar);
+    for(int j = 1; j <= SwingLookback; j++)
     {
-        // Bullish: swingLow is 100%, swingHigh is 0%
-        fib0 = currentBOS.swingHigh;
-        fib100 = currentBOS.swingLow;
-        double range = currentBOS.swingHigh - currentBOS.swingLow;
-        fib71 = currentBOS.swingHigh - range * FibEntryMin;
-        fib79 = currentBOS.swingHigh - range * FibEntryMax;
+        if(iHigh(g_symbol, Timeframe, bar + j) >= h) return false;
+        if(iHigh(g_symbol, Timeframe, bar - j) >= h) return false;
     }
-    else
+    return true;
+}
+
+bool IsSwingLow(int bar)
+{
+    double l = iLow(g_symbol, Timeframe, bar);
+    for(int j = 1; j <= SwingLookback; j++)
     {
-        // Bearish: swingHigh is 100%, swingLow is 0%
-        fib0 = currentBOS.swingLow;
-        fib100 = currentBOS.swingHigh;
-        double range = currentBOS.swingHigh - currentBOS.swingLow;
-        fib71 = currentBOS.swingLow + range * FibEntryMin;
-        fib79 = currentBOS.swingLow + range * FibEntryMax;
+        if(iLow(g_symbol, Timeframe, bar + j) <= l) return false;
+        if(iLow(g_symbol, Timeframe, bar - j) <= l) return false;
     }
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Detect BOS                                                        |
+//+------------------------------------------------------------------+
+void DetectBOS()
+{
+    if(setupActive) return;
+    if(!lastSwingHigh.valid || !lastSwingLow.valid) return;
+
+    double close = iClose(g_symbol, Timeframe, 1);
+
+    // BULLISH BOS: Swing LOW is more recent, price breaks above swing HIGH
+    if(lastSwingLow.barIdx < lastSwingHigh.barIdx)
+    {
+        if(close > lastSwingHigh.price)
+        {
+            Print("🟢 BULLISH BOS: Close ", close, " > Swing High ", lastSwingHigh.price);
+            ActivateBullishSetup(lastSwingHigh.price, lastSwingLow.price);
+        }
+    }
+
+    // BEARISH BOS: Swing HIGH is more recent, price breaks below swing LOW
+    if(lastSwingHigh.barIdx < lastSwingLow.barIdx)
+    {
+        if(close < lastSwingLow.price)
+        {
+            Print("🔴 BEARISH BOS: Close ", close, " < Swing Low ", lastSwingLow.price);
+            ActivateBearishSetup(lastSwingHigh.price, lastSwingLow.price);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Activate Bullish/Bearish Setup                                    |
+//+------------------------------------------------------------------+
+void ActivateBullishSetup(double swingH, double swingL)
+{
+    if(setupActive) return;
+
+    double range = swingH - swingL;
+    fib0 = swingH;
+    fib100 = swingL;
+    fib71 = swingH - range * FibEntryMin;
+    fib79 = swingH - range * FibEntryMax;
+
+    isBullishSetup = true;
+    setupActive = true;
+    bosBarIdx = 1;
+
+    DrawFibonacciLines();
+    PrintSetup("BULLISH");
+
+    if(EnableTelegram)
+        SendBOSNotification();
+}
+
+void ActivateBearishSetup(double swingH, double swingL)
+{
+    if(setupActive) return;
+
+    double range = swingH - swingL;
+    fib0 = swingL;
+    fib100 = swingH;
+    fib71 = swingL + range * FibEntryMin;
+    fib79 = swingL + range * FibEntryMax;
+
+    isBullishSetup = false;
+    setupActive = true;
+    bosBarIdx = 1;
+
+    DrawFibonacciLines();
+    PrintSetup("BEARISH");
+
+    if(EnableTelegram)
+        SendBOSNotification();
 }
 
 //+------------------------------------------------------------------+
@@ -375,41 +314,50 @@ void CalculateFibonacci()
 //+------------------------------------------------------------------+
 void DrawFibonacciLines()
 {
+    int bars = iBars(g_symbol, Timeframe);
+    if(bars < bosBarIdx + 1)
+        return;
+
     ObjectsDeleteAll(0, prefix);
 
-    // Get BOS candle time and calculate end time
     datetime bosTime = iTime(g_symbol, Timeframe, bosBarIdx);
     datetime endTime = bosTime + PeriodSeconds(Timeframe) * LineExtensionBars;
 
-    color setupColor = currentBOS.isBullish ? ColorBullish : ColorBearish;
+    color setupColor = isBullishSetup ? ColorBullish : ColorBearish;
 
     // TP line (0%)
     TrendLine(prefix + "TP", bosTime, fib0, endTime, fib0, ColorTP, LineWidthMain, "0% TP");
 
-    // Entry zone lines
+    // Entry zone
     TrendLine(prefix + "Entry71", bosTime, fib71, endTime, fib71, ColorEntry, LineWidthZone, "71%");
     TrendLine(prefix + "Entry79", bosTime, fib79, endTime, fib79, ColorEntry, LineWidthZone, "79%");
 
-    // Fill entry zone with rectangle
+    // Zone rectangle
     RectCreate(prefix + "Zone", bosTime, fib71, endTime, fib79, setupColor);
 
     // SL line (100%)
     TrendLine(prefix + "SL", bosTime, fib100, endTime, fib100, ColorSL, LineWidthMain, "100% SL");
 
+    // Swing arrows
+    if(lastSwingHigh.valid)
+        Arrow(prefix + "SH", lastSwingHigh.barIdx, lastSwingHigh.price, clrRed, 233);
+    if(lastSwingLow.valid)
+        Arrow(prefix + "SL", lastSwingLow.barIdx, lastSwingLow.price, clrGreen, 234);
+
     // BOS label
-    string bosText = currentBOS.isBullish ? "🟢 BULLISH" : "🔴 BEARISH";
-    double bosPrice = currentBOS.isBullish ? currentBOS.swingLow : currentBOS.swingHigh;
+    string bosText = isBullishSetup ? "🟢 BULLISH" : "🔴 BEARISH";
+    double bosPrice = isBullishSetup ? lastSwingLow.price : lastSwingHigh.price;
     Label(prefix + "BOS", bosTime, bosPrice, bosText, setupColor);
 
     ChartRedraw(0);
 }
 
 //+------------------------------------------------------------------+
-//| Trend Line helper                                                 |
+//| Drawing Helpers                                                   |
 //+------------------------------------------------------------------+
-void TrendLine(string name, datetime time1, double price1, datetime time2, double price2, color col, int width, string label)
+void TrendLine(string name, datetime t1, double p1, datetime t2, double p2, color col, int width, string label)
 {
-    ObjectCreate(0, name, OBJ_TREND, 0, time1, price1, time2, price2);
+    ObjectCreate(0, name, OBJ_TREND, 0, t1, p1, t2, p2);
     ObjectSetInteger(0, name, OBJPROP_COLOR, col);
     ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
     ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
@@ -418,28 +366,30 @@ void TrendLine(string name, datetime time1, double price1, datetime time2, doubl
     ObjectSetInteger(0, name, OBJPROP_BACK, true);
 }
 
-//+------------------------------------------------------------------+
-//| Rectangle helper                                                  |
-//+------------------------------------------------------------------+
-void RectCreate(string name, datetime time1, double price1, datetime time2, double price2, color col)
+void RectCreate(string name, datetime t1, double p1, datetime t2, double p2, color col)
 {
-    ObjectCreate(0, name, OBJ_RECTANGLE, 0, time1, price1, time2, price2);
+    ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, p1, t2, p2);
     ObjectSetInteger(0, name, OBJPROP_COLOR, col);
     ObjectSetInteger(0, name, OBJPROP_FILL, true);
     ObjectSetInteger(0, name, OBJPROP_BACK, true);
-    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
     ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
 }
 
-//+------------------------------------------------------------------+
-//| Label helper                                                      |
-//+------------------------------------------------------------------+
-void Label(string name, datetime time, double price, string text, color col)
+void Label(string name, datetime t, double p, string text, color col)
 {
-    ObjectCreate(0, name, OBJ_TEXT, 0, time, price);
+    ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
     ObjectSetString(0, name, OBJPROP_TEXT, text);
     ObjectSetInteger(0, name, OBJPROP_COLOR, col);
     ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
+}
+
+void Arrow(string name, int bar, double price, color col, int code)
+{
+    datetime t = iTime(g_symbol, Timeframe, bar);
+    ObjectCreate(0, name, OBJ_ARROW, 0, t, price);
+    ObjectSetInteger(0, name, OBJPROP_ARROWCODE, code);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
 }
 
 //+------------------------------------------------------------------+
@@ -447,29 +397,26 @@ void Label(string name, datetime time, double price, string text, color col)
 //+------------------------------------------------------------------+
 bool CheckSetupInvalidation()
 {
-    if(fib0 == 0 || fib100 == 0)
-        return false;
+    if(fib0 == 0 || fib100 == 0) return false;
 
     double bid = symbolInfo.Bid();
     double ask = symbolInfo.Ask();
 
-    // Check if in entry zone
-    bool inEntryZone = false;
-    if(currentBOS.isBullish)
-        inEntryZone = (bid <= fib71 && bid >= fib79);
-    else
-        inEntryZone = (bid >= fib79 && bid <= fib71);
+    double higherEntry = MathMax(fib71, fib79);
+    double lowerEntry = MathMin(fib71, fib79);
+    bool inZone = (bid >= lowerEntry && bid <= higherEntry);
 
-    // If not in entry zone and touched extreme -> cancel
-    if(!inEntryZone)
+    if(inZone) return false;
+
+    if(isBullishSetup)
     {
-        // Touched 0%
-        if(currentBOS.isBullish && ask >= fib0) return true;
-        if(!currentBOS.isBullish && bid <= fib0) return true;
-
-        // Touched 100%
-        if(currentBOS.isBullish && bid <= fib100) return true;
-        if(!currentBOS.isBullish && ask >= fib100) return true;
+        if(ask >= fib0) return true;
+        if(bid <= fib100) return true;
+    }
+    else
+    {
+        if(bid <= fib0) return true;
+        if(ask >= fib100) return true;
     }
 
     return false;
@@ -482,7 +429,6 @@ void CancelSetup()
 {
     ObjectsDeleteAll(0, prefix);
     setupActive = false;
-    currentBOS.detected = false;
     fib0 = fib71 = fib79 = fib100 = 0;
 
     if(pendingTicket > 0)
@@ -491,29 +437,24 @@ void CancelSetup()
         pendingTicket = 0;
     }
 
-    Print("⚪ Setup CANCELLED - price touched extreme");
-
-    if(EnableTelegram)
-        SendTelegram("⚪ Setup Cancelled - price touched 0% or 100%");
+    Print("⚪ Setup CANCELLED");
 }
 
 //+------------------------------------------------------------------+
-//| Check Trade Setup                                                 |
+//| Check Entry                                                       |
 //+------------------------------------------------------------------+
-void CheckTradeSetup()
+void CheckEntry()
 {
-    if(!setupActive || dailyTrades >= MaxDailyTrades)
-        return;
+    if(!setupActive || dailyTrades >= MaxDailyTrades) return;
+    if(pendingTicket > 0) return;
 
     double bid = symbolInfo.Bid();
+    double higherEntry = MathMax(fib71, fib79);
+    double lowerEntry = MathMin(fib71, fib79);
 
-    bool inEntryZone = false;
-    if(currentBOS.isBullish)
-        inEntryZone = (bid <= fib71 && bid >= fib79);
-    else
-        inEntryZone = (bid >= fib79 && bid <= fib71);
+    bool inZone = (bid >= lowerEntry && bid <= higherEntry);
 
-    if(inEntryZone && pendingTicket == 0)
+    if(inZone)
     {
         PlaceLimitOrder();
     }
@@ -531,16 +472,16 @@ void PlaceLimitOrder()
     entryPrice = NormalizeDouble(entryPrice, digits);
 
     bool success;
-    if(currentBOS.isBullish)
-        success = trade.BuyLimit(lotSize, entryPrice, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71 SMC");
+    if(isBullishSetup)
+        success = trade.BuyLimit(lotSize, entryPrice, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71");
     else
-        success = trade.SellLimit(lotSize, entryPrice, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71 SMC");
+        success = trade.SellLimit(lotSize, entryPrice, g_symbol, fib0, fib100, ORDER_TIME_GTC, 0, "Fibo71");
 
     if(success)
     {
         pendingTicket = trade.ResultOrder();
         dailyTrades++;
-        Print("✅ Order placed: ", currentBOS.isBullish ? "BUY" : "SELL", " @ ", entryPrice);
+        Print("✅ Order placed: ", isBullishSetup ? "BUY" : "SELL", " @ ", entryPrice);
     }
     else
     {
@@ -558,9 +499,6 @@ void CheckPendingOrder()
         pendingTicket = 0;
         return;
     }
-
-    // Check if order expired or was triggered
-    // If triggered, pendingTicket becomes 0
 }
 
 //+------------------------------------------------------------------+
@@ -588,11 +526,26 @@ double CalculateLotSize()
 }
 
 //+------------------------------------------------------------------+
+//| Print Setup                                                       |
+//+------------------------------------------------------------------+
+void PrintSetup(string dir)
+{
+    Print("══════════════════════════════════════════════════");
+    Print(dir == "BULLISH" ? "🟢 BULLISH BOS" : "🔴 BEARISH BOS");
+    Print("Swing H: ", lastSwingHigh.price, " @ bar[", lastSwingHigh.barIdx, "]");
+    Print("Swing L: ", lastSwingLow.price, " @ bar[", lastSwingLow.barIdx, "]");
+    Print("TP (0%): ", fib0);
+    Print("Entry: ", MathMin(fib71, fib79), " - ", MathMax(fib71, fib79));
+    Print("SL (100%): ", fib100);
+    Print("══════════════════════════════════════════════════");
+}
+
+//+------------------------------------------------------------------+
 //| Send BOS Notification                                             |
 //+------------------------------------------------------------------+
 void SendBOSNotification()
 {
-    string dir = currentBOS.isBullish ? "🟢 BULLISH" : "🔴 BEARISH";
+    string dir = isBullishSetup ? "🟢 BULLISH" : "🔴 BEARISH";
     string msg = dir + " BOS Detected\n\n";
     msg += "Symbol: " + g_symbol + "\n";
     msg += "TP (0%): " + DoubleToString(fib0, 5) + "\n";
@@ -622,7 +575,7 @@ bool SendTelegram(string message)
     int res = WebRequest("POST", url, "Content-Type: application/x-www-form-urlencoded\r\n",
                          5000, data, result, headers);
 
-    return (res != -1 && StringFind(CharArrayToString(result), "\"ok\":true") >= 0);
+    return (res != -1);
 }
 
 //+------------------------------------------------------------------+
@@ -654,5 +607,4 @@ string URLEncode(string text)
     }
     return result;
 }
-
 //+------------------------------------------------------------------+

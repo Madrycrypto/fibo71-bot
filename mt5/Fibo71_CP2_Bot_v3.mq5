@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Fibo71 Bot"
 #property link      ""
-#property version   "3.00"
+#property version   "3.10"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -164,6 +164,7 @@ input bool     SendFilterRejections = false;         // [ON/OFF] Send msg when s
 // ================================================================
 input group "========== 9. DISPLAY - MAIN LINES =========="
 
+input int      LineExtensionBars = 50;               // How far lines extend (bars)
 input bool     ShowFibLines = true;                  // [ON/OFF] Show Fibonacci lines
 
 // --- TP Line (0%) ---
@@ -302,6 +303,9 @@ datetime lastTradeDate = 0;
 ulong pendingTicket = 0;
 bool setupActive = false;
 
+// BOS bar for line drawing
+int bosBarIdx = 0;
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
@@ -351,7 +355,7 @@ int OnInit()
     }
 
     Print("========================================");
-    Print("Fibo 71 Bot - CP 2.0 Strategy v3.00");
+    Print("Fibo 71 Bot - CP 2.0 Strategy v3.10");
     Print("========================================");
     Print("Symbol: ", g_Symbol, " | Timeframe: ", EnumToString(chartTF));
     Print("Risk: ", RiskPercent, "% | Entry Zone: ", FibEntryMin * 100, "% - ", FibEntryMax * 100, "%");
@@ -443,6 +447,7 @@ void AnalyzeMarket()
     // Calculate Fibonacci levels
     if(bullishBOSConfirmed || bearishBOSConfirmed)
     {
+        bosBarIdx = 1;  // BOS confirmed on previous candle
         CalculateFibonacci();
         DrawFibonacciLines();
 
@@ -517,6 +522,79 @@ void FindSwingPoints()
             break;  // Found most recent swing low
         }
     }
+}
+
+//+------------------------------------------------------------------+
+//| Find Next Swing Point Time - for dynamic zone extension          |
+//| Returns time of next swing point after current setup              |
+//+------------------------------------------------------------------+
+datetime FindNextSwingPointTime(bool isShortSetup)
+{
+    // For SHORT setup: find next swing HIGH (zone extends until next HH)
+    // For LONG setup: find next swing LOW (zone extends until next LL)
+
+    int bars = iBars(g_Symbol, Period());
+    if(bars < 5)
+        return 0;
+
+    // Start from bar 1 (current candle) and look for swing point
+    int confirmBars = SwingConfirmBars;
+    if(confirmBars < 2)
+        confirmBars = 2;
+
+    if(isShortSetup)
+    {
+        // Find next swing HIGH (higher than N bars on each side)
+        for(int i = 1; i < bars - confirmBars; i++)
+        {
+            double h = iHigh(g_Symbol, Period(), i);
+
+            // Check if this is a swing high
+            bool isSwingHigh = true;
+            for(int j = 1; j <= confirmBars; j++)
+            {
+                if(iHigh(g_Symbol, Period(), i + j) >= h || iHigh(g_Symbol, Period(), i - j) >= h)
+                {
+                    isSwingHigh = false;
+                    break;
+                }
+            }
+
+            if(isSwingHigh)
+            {
+                // Found next swing high - return its time
+                return iTime(g_Symbol, Period(), i);
+            }
+        }
+    }
+    else
+    {
+        // Find next swing LOW (lower than N bars on each side)
+        for(int i = 1; i < bars - confirmBars; i++)
+        {
+            double l = iLow(g_Symbol, Period(), i);
+
+            // Check if this is a swing low
+            bool isSwingLow = true;
+            for(int j = 1; j <= confirmBars; j++)
+            {
+                if(iLow(g_Symbol, Period(), i + j) <= l || iLow(g_Symbol, Period(), i - j) <= l)
+                {
+                    isSwingLow = false;
+                    break;
+                }
+            }
+
+            if(isSwingLow)
+            {
+                // Found next swing low - return its time
+                return iTime(g_Symbol, Period(), i);
+            }
+        }
+    }
+
+    // No next swing point found
+    return 0;
 }
 
 //+------------------------------------------------------------------+
@@ -916,12 +994,31 @@ void DrawFibonacciLines()
     if(!ShowFibLines)
         return;
 
+    // Check if we have enough bars
+    int bars = iBars(g_Symbol, Period());
+    if(bars < bosBarIdx + 1)
+        return;
+
     // Delete old objects
     ObjectsDeleteAll(0, prefix);
 
     int symDigits = (int)SymbolInfoInteger(g_Symbol, SYMBOL_DIGITS);
-    datetime timeStart = iTime(g_Symbol, Period(), BOSLookback);
-    datetime timeEnd = TimeCurrent() + PeriodSeconds() * 50;
+    datetime bosTime = iTime(g_Symbol, Period(), bosBarIdx);
+    datetime timeEnd = bosTime + PeriodSeconds(Period()) * LineExtensionBars;
+
+    // --- DYNAMIC ZONE EXTENSION ---
+    // For entry zone: extend until next swing point (not just fixed bars)
+    datetime zoneTimeEnd = timeEnd;  // Default to static extension
+
+    bool isShortSetup = bearishBOSConfirmed;
+    datetime nextSwingTime = FindNextSwingPointTime(isShortSetup);
+
+    if(nextSwingTime > 0 && nextSwingTime > bosTime)
+    {
+        // Found next swing point - use it as zone end time
+        zoneTimeEnd = nextSwingTime;
+        Print("Zone extends to next swing point: ", TimeToString(zoneTimeEnd, TIME_DATE|TIME_MINUTES));
+    }
 
     // --- ENTRY ZONE RECTANGLE ---
     if(ShowEntryZone)
@@ -931,7 +1028,8 @@ void DrawFibonacciLines()
         color zoneColor = bullishBOSConfirmed ? ColorZoneLong : ColorZoneShort;
 
         string zoneName = prefix + "EntryZone";
-        ObjectCreate(0, zoneName, OBJ_RECTANGLE, 0, timeStart, zoneTop, timeEnd, zoneBottom);
+        // Use dynamic zoneTimeEnd for entry zone (extends to next swing point)
+        ObjectCreate(0, zoneName, OBJ_RECTANGLE, 0, bosTime, zoneTop, zoneTimeEnd, zoneBottom);
 
         // Calculate alpha from opacity
         int alpha = 255 - (int)(255.0 * ZoneOpacity / 100.0);
@@ -945,24 +1043,24 @@ void DrawFibonacciLines()
     }
 
     // --- TP LINE (0%) ---
-    CreateHLineWithLabel(prefix + "Fib_0", fib0, ColorTP, WidthTP, StyleTP, "0% (TP)", timeEnd);
+    CreateTrendLine(prefix + "Fib_0", bosTime, fib0, timeEnd, fib0, ColorTP, WidthTP, "0% (TP)");
 
     // --- 38.2% LINE ---
     if(ShowOtherFibs && WidthFib38 > 0)
-        CreateHLineWithLabel(prefix + "Fib_38", fib38, ColorFib38, WidthFib38, StyleFib, "38.2%", timeEnd);
+        CreateTrendLine(prefix + "Fib_38", bosTime, fib38, timeEnd, fib38, ColorFib38, WidthFib38, "38.2%");
 
     // --- 50% LINE ---
     if(ShowOtherFibs && WidthFib50 > 0)
-        CreateHLineWithLabel(prefix + "Fib_50", fib50, ColorFib50, WidthFib50, StyleFib, "50%", timeEnd);
+        CreateTrendLine(prefix + "Fib_50", bosTime, fib50, timeEnd, fib50, ColorFib50, WidthFib50, "50%");
 
     // --- 62% LINE (Entry start) ---
-    CreateHLineWithLabel(prefix + "Fib_62", fib62, ColorEntry, WidthEntry, StyleEntry, "62%", timeEnd);
+    CreateTrendLine(prefix + "Fib_62", bosTime, fib62, zoneTimeEnd, fib62, ColorEntry, WidthEntry, "62%");
 
     // --- 71% LINE (Entry end) ---
-    CreateHLineWithLabel(prefix + "Fib_71", fib71, ColorEntry, WidthEntry, StyleEntry, "71%", timeEnd);
+    CreateTrendLine(prefix + "Fib_71", bosTime, fib71, zoneTimeEnd, fib71, ColorEntry, WidthEntry, "71%");
 
     // --- SL LINE (100%) ---
-    CreateHLineWithLabel(prefix + "Fib_100", fib100, ColorSL, WidthSL, StyleSL, "100% (SL)", timeEnd);
+    CreateTrendLine(prefix + "Fib_100", bosTime, fib100, timeEnd, fib100, ColorSL, WidthSL, "100% (SL)");
 
     // --- SWING POINTS ---
     if(ShowSwingPoints)
@@ -1058,6 +1156,32 @@ bool CreateHLineWithLabel(string name, double price, color clr, int width, ENUM_
         ObjectSetInteger(0, textName, OBJPROP_FONTSIZE, LabelFontSize);
         ObjectSetString(0, textName, OBJPROP_FONT, "Arial");
     }
+
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Create Trend Line (horizontal segment)                            |
+//+------------------------------------------------------------------+
+bool CreateTrendLine(string name, datetime time1, double price1, datetime time2, double price2, color clr, int width, string labelText)
+{
+    int symDigits = (int)SymbolInfoInteger(g_Symbol, SYMBOL_DIGITS);
+
+    // Create the trend line (horizontal segment)
+    if(ObjectFind(0, name) < 0)
+        ObjectCreate(0, name, OBJ_TREND, 0, time1, price1, time2, price2);
+
+    ObjectSetDouble(0, name, OBJPROP_PRICE, 0, price1);
+    ObjectSetDouble(0, name, OBJPROP_PRICE, 1, price2);
+    ObjectSetInteger(0, name, OBJPROP_TIME, 0, time1);
+    ObjectSetInteger(0, name, OBJPROP_TIME, 1, time2);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+    ObjectSetInteger(0, name, OBJPROP_BACK, true);
+    ObjectSetString(0, name, OBJPROP_TEXT, labelText);
+    ObjectSetString(0, name, OBJPROP_TOOLTIP, labelText + ": " + DoubleToString(price1, symDigits));
 
     return true;
 }
