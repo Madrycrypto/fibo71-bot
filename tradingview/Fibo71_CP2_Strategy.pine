@@ -72,11 +72,39 @@ fairValueGapsTimeframeInput = input.timeframe('', 'Timeframe', group = G_LUX3)
 fairValueGapsBullColorInput = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = G_LUX3)
 fairValueGapsBearColorInput = input.color(color.new(#ff0008, 70), 'Bearish FVG' , group = G_LUX3)
 fairValueGapsExtendInput = input.int(1, 'Extend FVG', group = G_LUX3, minval = 0)
+
 //=====================================================================================================================
 // [2] BOT TRADING SETTINGS (FIBO GRID & EXECUTION)
 //=====================================================================================================================
 G_BOT_RISK = "🤖 [2.A] BOT - RYZYKO I SIATKA FIBO"
+// ===== CONTROL MODE =====
+controlMode = input.string("PRESET", "Tryb kontroli", 
+     options=["PRESET", "CUSTOM", "HYBRID"], group=G_BOT_RISK)
+// ===== PRESETS =====
+preset = input.string("AUTO", "Preset rynku", 
+     options=["AUTO", "CRYPTO", "FOREX", "GOLD", "INDICES"], group=G_BOT_RISK)
+
+// ===== CUSTOM EP =====
+c_ep1Min = input.float(0.32, "CUSTOM EP1 Min", step=0.01, group=G_BOT_RISK)
+c_ep1Max = input.float(0.38, "CUSTOM EP1 Max", step=0.01, group=G_BOT_RISK)
+c_ep2Min = input.float(0.62, "CUSTOM EP2 Min", step=0.01, group=G_BOT_RISK)
+c_ep2Max = input.float(0.79, "CUSTOM EP2 Max", step=0.01, group=G_BOT_RISK)
+
 G_BOT_FILT = "🤖 [2.B] BOT - PRO FILTRY TRANZAKCJI"
+
+useMarketIfMissed = input.bool(true, "Market entry jeśli brak retrace", group=G_BOT_RISK)
+minRR = input.float(1.5, "Minimal RR", group=G_BOT_FILT)
+
+// ===== CUSTOM ATR =====
+c_atrMult = input.float(1.5, "CUSTOM ATR Mult", step=0.1, group=G_BOT_FILT)
+c_atrLen  = input.int(14, "CUSTOM ATR Len", group=G_BOT_FILT)
+
+// ===== SESSION =====
+useCustomSession = input.bool(false, "CUSTOM Session", group=G_BOT_FILT)
+sessStart = input.int(7, "Session Start", group=G_BOT_FILT)
+sessEnd   = input.int(17, "Session End", group=G_BOT_FILT)
+customSessionOK = hour >= sessStart and hour <= sessEnd
+
 triggerSource = input.string("Swing BOS", title="Sygnał główny z LuxAlgo do Wejścia (Trigger)", options=["Swing BOS", "Swing CHoCH", "Swing All", "Internal BOS", "Internal CHoCH", "Internal All"], group=G_BOT_RISK)
 riskPercent = input.float(1.0, title="Ryzyko Całkowite (%) - Dzieli się 50/50 jeśli EP2", step=0.1, group=G_BOT_RISK)
 actualRisk = riskPercent
@@ -124,6 +152,7 @@ atrSmooth = input.int(50, title="- Uśrednienie ATR", group=G_BOT_FILT)
 atrThresholdMult = input.float(1.0, title="- Mnożnik progu", step=0.1, group=G_BOT_FILT)
 webhookToken = input.string("token", title="Token Webhook", group="Webhook")
 showDebugPanel = input.bool(true, title="Pokaż wskaźniki Debug Panel w HUD", group="Wizualizacja")
+sessionOK = not useCustomSession or customSessionOK
 //=====================================================================================================================
 // LUXALGO ENGINE (TYPES & VARIABLES)
 //=====================================================================================================================
@@ -198,6 +227,8 @@ var swingBullishColor = styleInput == MONOCHROME ? MONO_BULLISH : swingBullColor
 var swingBearishColor = styleInput == MONOCHROME ? MONO_BEARISH : swingBearColorInput
 var fairValueGapBullishColor = styleInput == MONOCHROME ? color.new(MONO_BULLISH,70) : fairValueGapsBullColorInput
 var fairValueGapBearishColor = styleInput == MONOCHROME ? color.new(MONO_BEARISH,70) : fairValueGapsBearColorInput
+var float rr_long = na
+var float rr_short = na
 var initialTime = time
 if barstate.isfirst
     if showSwingOrderBlocksInput
@@ -453,13 +484,16 @@ isDisplacement = not useDisplacement or recentImpulse
 // MAPOWANIE TRIGGERÓW STRUCTURY LUXALGO:
 bullSignal = triggerSource == "Swing BOS" ? currentAlerts.swingBullishBOS : triggerSource == "Swing CHoCH" ? currentAlerts.swingBullishCHoCH : triggerSource == "Swing All" ? (currentAlerts.swingBullishBOS or currentAlerts.swingBullishCHoCH) : triggerSource == "Internal BOS" ? currentAlerts.internalBullishBOS : triggerSource == "Internal CHoCH" ? currentAlerts.internalBullishCHoCH : (currentAlerts.internalBullishBOS or currentAlerts.internalBullishCHoCH)
 bearSignal = triggerSource == "Swing BOS" ? currentAlerts.swingBearishBOS : triggerSource == "Swing CHoCH" ? currentAlerts.swingBearishCHoCH : triggerSource == "Swing All" ? (currentAlerts.swingBearishBOS or currentAlerts.swingBearishCHoCH) : triggerSource == "Internal BOS" ? currentAlerts.internalBearishBOS : triggerSource == "Internal CHoCH" ? currentAlerts.internalBearishCHoCH : (currentAlerts.internalBearishBOS or currentAlerts.internalBearishCHoCH)
-var int adaptiveBias = 0 
+var float adaptiveBiasRaw = 0
+var float adaptiveBias = 0
 if bullSignal
     if adaptiveOption == "AUTO" or adaptiveOption == "TREND_ONLY"
-        adaptiveBias := 1
+        adaptiveBiasRaw := 1
 if bearSignal
     if adaptiveOption == "AUTO" or adaptiveOption == "TREND_ONLY"
-        adaptiveBias := -1
+        adaptiveBiasRaw := -1
+
+adaptiveBias := ta.sma(adaptiveBiasRaw, 5)
 var bool hasBullishSweep = false
 var bool hasBearishSweep = false
 localLow = ta.lowest(low[1], sweepLookback)
@@ -497,8 +531,8 @@ isChop = useAntiChop and condChopAct
 bool isAdaptiveBullish = adaptiveOption == "OFF" or adaptiveBias >= 0
 bool isAdaptiveBearish = adaptiveOption == "OFF" or adaptiveBias <= 0
 bool isWithinDate = not useDateFilter or (bar_index >= (last_bar_index - maxBarsBack))
-triggerBullishMove = tradeLongs and isWithinDate and (not useHTF or htf_trend == reqHtfBull) and bullSignal and not isChop and isAdaptiveBullish and isExpansion and isDisplacement
-triggerBearishMove = tradeShorts and isWithinDate and (not useHTF or htf_trend == reqHtfBear) and bearSignal and not isChop and isAdaptiveBearish and isExpansion and isDisplacement
+triggerBullishMove = sessionOK and isWithinDate and (not useHTF or htf_trend == reqHtfBull) and bullSignal and not isChop and isAdaptiveBullish and isExpansion and isDisplacement
+triggerBearishMove = sessionOK and isWithinDate and (not useHTF or htf_trend == reqHtfBear) and bearSignal and not isChop and isAdaptiveBearish and isExpansion and isDisplacement
 // POZYSKIWANIE DOŁKÓW STRUKTURY LUXALGO:
 isInternalTrigger = triggerSource == "Internal BOS" or triggerSource == "Internal CHoCH" or triggerSource == "Internal All"
 startFib_Long = isInternalTrigger ? internalLow.currentLevel  : swingLow.currentLevel
@@ -529,6 +563,49 @@ if triggerBearishMove and (not reqSweep or hasBearishSweep) and freshShortStruct
         isShortSetup := true
         isLongSetup := false
         hasBearishSweep := false 
+// ===== AUTO PRESET ENGINE =====
+float p_ep1Min = ep1Min
+float p_ep1Max = ep1Max
+float p_ep2Min = ep2Min
+float p_ep2Max = ep2Max
+float p_atrMult = 1.5
+int   p_atrLen  = 14
+
+var string finalPreset = preset
+
+if preset == "AUTO"
+    finalPreset := syminfo.type == "crypto" ? "CRYPTO" :
+                   syminfo.type == "forex" ? "FOREX" :
+                   syminfo.ticker == "XAUUSD" ? "GOLD" : "INDICES"
+
+// ===== PRESET VALUES =====
+if finalPreset == "CRYPTO"
+    p_ep1Min := 0.30
+    p_ep1Max := 0.40
+    p_ep2Min := 0.65
+    p_ep2Max := 0.85
+    p_atrMult := 1.5
+
+if finalPreset == "FOREX"
+    p_ep1Min := 0.33
+    p_ep1Max := 0.38
+    p_ep2Min := 0.60
+    p_ep2Max := 0.75
+    p_atrMult := 1.2
+
+if finalPreset == "GOLD"
+    p_ep1Min := 0.35
+    p_ep1Max := 0.42
+    p_ep2Min := 0.65
+    p_ep2Max := 0.80
+    p_atrMult := 1.6
+
+if finalPreset == "INDICES"
+    p_ep1Min := 0.25
+    p_ep1Max := 0.35
+    p_ep2Min := 0.55
+    p_ep2Max := 0.70
+    p_atrMult := 1.3
 if isLongSetup and strategy.position_size == 0
     if high > fib0
         if trailSLBox
@@ -555,6 +632,38 @@ var float ep1MaxDraw = na
 var float ep2MinDraw = na
 var float ep2MaxDraw = na
 bool isValidDraw = (isLongSetup or isShortSetup) and not (triggerBullishMove or triggerBearishMove)
+// ===== FINAL VALUES =====
+float f_ep1Min = na
+float f_ep1Max = na
+float f_ep2Min = na
+float f_ep2Max = na
+float f_atrMult = na
+int   f_atrLen = na
+
+if controlMode == "PRESET"
+    f_ep1Min := p_ep1Min
+    f_ep1Max := p_ep1Max
+    f_ep2Min := p_ep2Min
+    f_ep2Max := p_ep2Max
+    f_atrMult := p_atrMult
+    f_atrLen := p_atrLen
+
+if controlMode == "CUSTOM"
+    f_ep1Min := c_ep1Min
+    f_ep1Max := c_ep1Max
+    f_ep2Min := c_ep2Min
+    f_ep2Max := c_ep2Max
+    f_atrMult := c_atrMult
+    f_atrLen := c_atrLen
+
+if controlMode == "HYBRID"
+    f_ep1Min := na(c_ep1Min) ? p_ep1Min : c_ep1Min
+    f_ep1Max := na(c_ep1Max) ? p_ep1Max : c_ep1Max
+    f_ep2Min := na(c_ep2Min) ? p_ep2Min : c_ep2Min
+    f_ep2Max := na(c_ep2Max) ? p_ep2Max : c_ep2Max
+    f_atrMult := na(c_atrMult) ? p_atrMult : c_atrMult
+    f_atrLen := na(c_atrLen) ? p_atrLen : c_atrLen
+
 visualp1Min = isValidDraw ? ep1MinDraw : na
 visualp1Max = isValidDraw ? ep1MaxDraw : na
 visualp2Min = isValidDraw ? ep2MinDraw : na
@@ -589,112 +698,194 @@ if isLongSetup
     longSL = fib100 - slDistance  
     longTP = fib0    
     
-    EP1_limit = fib0 - (fib0 - fib100) * ep1Min  
-    EP1_max = fib0 - (fib0 - fib100) * ep1Max
-    EP2_limit = useEP2 ? (fib0 - (fib0 - fib100) * ep2Min) : na
-    EP2_max = useEP2 ? (fib0 - (fib0 - fib100) * ep2Max) : na
-    
-    ep1MinDraw := EP1_limit
-    ep1MaxDraw := EP1_max
-    ep2MinDraw := EP2_limit
-    ep2MaxDraw := EP2_max
-    
-    if low < longSL 
-        isLongSetup := false
-        strategy.cancel_all()
-    else
-        float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
-        float riskAlloc_EP2 = actualRisk / 2.0
-        qty1 = calcQty(EP1_limit, longSL, riskAlloc_EP1)
-        activeSL := longSL
-        activeTP := longTP
+    EP1_limit = fib0 - (fib0 - fib100) * f_ep1Min  
+    EP1_max   = fib0 - (fib0 - fib100) * f_ep1Max
+    EP2_limit = useEP2 ? (fib0 - (fib0 - fib100) * f_ep2Min) : na
+    EP2_max   = useEP2 ? (fib0 - (fib0 - fib100) * f_ep2Max) : na
+    var float rr_long = na
+    rr_long := (longTP - EP1_limit) / (EP1_limit - longSL)
+
+    if rr_long >= minRR
+        ep1MinDraw := EP1_limit
+        ep1MaxDraw := EP1_max
+        ep2MinDraw := EP2_limit
+        ep2MaxDraw := EP2_max
         
-        msgEnterL1 = '{"token": "' + webhookToken + '", "action": "ENTER_EP1_LONG", "symbol": "' + sym + '"}'
-        strategy.entry("EP1 L", strategy.long, qty=qty1, limit=EP1_limit, alert_message=msgEnterL1)
-        
-        if useEP2
-            qty2 = calcQty(EP2_limit, longSL, riskAlloc_EP2)
-            msgEnterL2 = '{"token": "' + webhookToken + '", "action": "ENTER_EP2_LONG", "symbol": "' + sym + '"}'
-            strategy.entry("EP2 L", strategy.long, qty=qty2, limit=EP2_limit, alert_message=msgEnterL2)
-        
-        if high > longTP
+        if low < longSL 
             isLongSetup := false
-            strategy.cancel("EP2 L")
+            strategy.cancel_all()
+        else
+            float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
+            float riskAlloc_EP2 = actualRisk / 2.0
+
+            qty1 = calcQty(EP1_limit, longSL, riskAlloc_EP1)
+            activeSL := longSL
+            activeTP := longTP
+            
+            strategy.entry("EP1 L", strategy.long, qty=qty1, limit=EP1_limit)
+            
+            if useEP2
+                qty2 = calcQty(EP2_limit, longSL, riskAlloc_EP2)
+                strategy.entry("EP2 L", strategy.long, qty=qty2, limit=EP2_limit)
+
+            if high > longTP
+                isLongSetup := false
+                strategy.cancel("EP2 L")
+    else
+        isLongSetup := false
+
 if isShortSetup
     shortSL = fib100 + slDistance 
     shortTP = fib0   
     
-    EP1_limit = fib0 + (fib100 - fib0) * ep1Min
-    EP1_max = fib0 + (fib100 - fib0) * ep1Max
-    EP2_limit = useEP2 ? (fib0 + (fib100 - fib0) * ep2Min) : na
-    EP2_max = useEP2 ? (fib0 + (fib100 - fib0) * ep2Max) : na
-    
-    ep1MinDraw := EP1_limit
-    ep1MaxDraw := EP1_max
-    ep2MinDraw := EP2_limit
-    ep2MaxDraw := EP2_max
-    
-    if high > shortSL
-        isShortSetup := false
-        strategy.cancel_all()
-    else
-        float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
-        float riskAlloc_EP2 = actualRisk / 2.0
-        qty1 = calcQty(EP1_limit, shortSL, riskAlloc_EP1)
-        activeSL := shortSL
-        activeTP := shortTP
+    EP1_limit = fib0 + (fib100 - fib0) * f_ep1Min
+    EP1_max   = fib0 + (fib100 - fib0) * f_ep1Max
+    EP2_limit = useEP2 ? (fib0 + (fib100 - fib0) * f_ep2Min) : na
+    EP2_max   = useEP2 ? (fib0 + (fib100 - fib0) * f_ep2Max) : na
+    var float rr_short = na
+    rr_short := (EP1_limit - shortTP) / (shortSL - EP1_limit)
+
+    if rr_short >= minRR
+        ep1MinDraw := EP1_limit
+        ep1MaxDraw := EP1_max
+        ep2MinDraw := EP2_limit
+        ep2MaxDraw := EP2_max
         
-        msgEnterS1 = '{"token": "' + webhookToken + '", "action": "ENTER_EP1_SHORT", "symbol": "' + sym + '"}'
-        strategy.entry("EP1 S", strategy.short, qty=qty1, limit=EP1_limit, alert_message=msgEnterS1)
-        
-        if useEP2
-            qty2 = calcQty(EP2_limit, shortSL, riskAlloc_EP2)
-            msgEnterS2 = '{"token": "' + webhookToken + '", "action": "ENTER_EP2_SHORT", "symbol": "' + sym + '"}'
-            strategy.entry("EP2 S", strategy.short, qty=qty2, limit=EP2_limit, alert_message=msgEnterS2)
-        if low < shortTP
+        if high > shortSL
             isShortSetup := false
-            strategy.cancel("EP2 S")
-// ZARZĄDZANIE OTWARTĄ POZYCJĄ I SCALE-OUT
+            strategy.cancel_all()
+        else
+            float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
+            float riskAlloc_EP2 = actualRisk / 2.0
+
+            qty1 = calcQty(EP1_limit, shortSL, riskAlloc_EP1)
+            activeSL := shortSL
+            activeTP := shortTP
+            
+            strategy.entry("EP1 S", strategy.short, qty=qty1, limit=EP1_limit)
+            
+            if useEP2
+                qty2 = calcQty(EP2_limit, shortSL, riskAlloc_EP2)
+                strategy.entry("EP2 S", strategy.short, qty=qty2, limit=EP2_limit)
+
+            if low < shortTP
+                isShortSetup := false
+                strategy.cancel("EP2 S")
+    else
+        isShortSetup := false
+
+// ==========================
+// 🔥 PRO EXIT ENGINE (ATR TRAIL + TRUE 100%)
+// ==========================
+
+// ===== INPUTY =====
+useRunnerTrail = input.bool(true, "Trailing tylko dla Runnera (po TP1)", group=G_BOT_RISK)
+atrTrailMult = input.float(1.5, "ATR Multiplier Runner", step=0.1, group=G_BOT_RISK)
+atrTrailLen = input.int(14, "ATR Length Runner", group=G_BOT_RISK)
+
+// ===== ATR (spójny z presetem/custom) =====
+atr_val = ta.atr(f_atrLen)
+trail = atr_val * f_atrMult
+
+// ===== FLAGS =====
+var bool tp1_hit_long = false
+var bool tp1_hit_short = false
+
 msgExitLong  = '{"token": "' + webhookToken + '", "action": "EXIT_LONG", "symbol": "' + sym + '"}'
 msgExitShort = '{"token": "' + webhookToken + '", "action": "EXIT_SHORT", "symbol": "' + sym + '"}'
+
+
+// ==========================
+// LONG
+// ==========================
 if strategy.position_size > 0
-    if bearSignal // ODWRÓCENIE TRENDU ZAMYKA RUNNERY!
-        strategy.close_all(comment="Odwrotny Sygnał (Zamknięcie Runnera)", alert_message=msgExitLong)
-    if useBE and not isLongBE and bullSignal
-        activeSL := strategy.position_avg_price  
-        isLongBE := true
-        alert('{"token": "' + webhookToken + '", "action": "MOVE_TO_BE", "side": "LONG", "symbol": "' + sym + '", "new_sl": ' + str.tostring(activeSL) + '}', alert.freq_once_per_bar_close)
-    
+
+    // TP1 HIT
+    if not tp1_hit_long and high >= activeTP
+        tp1_hit_long := true
+
+    // ===== SMART BREAK EVEN =====
+beTrigger = strategy.position_avg_price * 1.002  // 0.2%
+
+if useBE and not isLongBE and close > beTrigger
+    activeSL := strategy.position_avg_price
+    isLongBE := true
+
     if tpModeB
-        strategy.exit("TP1 EP1", from_entry="EP1 L", qty_percent=70, limit=activeTP, alert_message=msgExitLong)
+        // ===== TP1 =====
+        strategy.exit("TP1 EP1", from_entry="EP1 L", qty_percent=70, limit=activeTP)
         if useEP2
-            strategy.exit("TP1 EP2", from_entry="EP2 L", qty_percent=70, limit=activeTP, alert_message=msgExitLong)
-        strategy.exit("SL EP1", from_entry="EP1 L", stop=activeSL, alert_message=msgExitLong) 
+            strategy.exit("TP1 EP2", from_entry="EP2 L", qty_percent=70, limit=activeTP)
+
+        // ===== RUNNER ATR =====
+        float runnerSL = tp1_hit_long and useRunnerTrail ? (close - trail) : activeSL
+
+        strategy.exit("RUNNER EP1", from_entry="EP1 L", qty_percent=30, stop=runnerSL)
         if useEP2
-            strategy.exit("SL EP2", from_entry="EP2 L", stop=activeSL, alert_message=msgExitLong)
+            strategy.exit("RUNNER EP2", from_entry="EP2 L", qty_percent=30, stop=runnerSL)
+
+        // reverse zamyka
+        if bearSignal
+            strategy.close("EP1 L")
+            if useEP2
+                strategy.close("EP2 L")
+
     else
-        strategy.exit("Exit EP1", from_entry="EP1 L", limit=activeTP, stop=activeSL, alert_message=msgExitLong)
+        // ===== TRUE 100% =====
+        strategy.exit("FULL EP1", from_entry="EP1 L", limit=activeTP, stop=activeSL)
         if useEP2
-            strategy.exit("Exit EP2", from_entry="EP2 L", limit=activeTP, stop=activeSL, alert_message=msgExitLong)
+            strategy.exit("FULL EP2", from_entry="EP2 L", limit=activeTP, stop=activeSL)
+
+// ===== MARKET ENTRY FALLBACK =====
+if useMarketIfMissed and isLongSetup and strategy.position_size == 0 and close > fib0 and rr_long >= minRR
+    strategy.entry("MKT L", strategy.long)
+    isLongSetup := false
+
+// ==========================
+// SHORT
+// ==========================
 if strategy.position_size < 0
-    if bullSignal // ODWRÓCENIE TRENDU ZAMYKA RUNNERY!
-        strategy.close_all(comment="Odwrotny Sygnał (Zamknięcie Runnera)", alert_message=msgExitShort)
-    if useBE and not isShortBE and bearSignal
-        activeSL := strategy.position_avg_price 
+
+    if not tp1_hit_short and low <= activeTP
+        tp1_hit_short := true
+
+    beTriggerShort = strategy.position_avg_price * 0.998
+
+    if useBE and not isShortBE and close < beTriggerShort
+        activeSL := strategy.position_avg_price
         isShortBE := true
-        alert('{"token": "' + webhookToken + '", "action": "MOVE_TO_BE", "side": "SHORT", "symbol": "' + sym + '", "new_sl": ' + str.tostring(activeSL) + '}', alert.freq_once_per_bar_close)
-    
+
     if tpModeB
-        strategy.exit("TP1 EP1", from_entry="EP1 S", qty_percent=70, limit=activeTP, alert_message=msgExitShort)
+        // ===== TP1 =====
+        strategy.exit("TP1 EP1", from_entry="EP1 S", qty_percent=70, limit=activeTP)
         if useEP2
-            strategy.exit("TP1 EP2", from_entry="EP2 S", qty_percent=70, limit=activeTP, alert_message=msgExitShort)
-        strategy.exit("SL EP1", from_entry="EP1 S", stop=activeSL, alert_message=msgExitShort)
+            strategy.exit("TP1 EP2", from_entry="EP2 S", qty_percent=70, limit=activeTP)
+
+        // ===== RUNNER ATR =====
+        float runnerSL = tp1_hit_short and useRunnerTrail ? (close + trail) : activeSL
+
+        strategy.exit("RUNNER EP1", from_entry="EP1 S", qty_percent=30, stop=runnerSL)
         if useEP2
-            strategy.exit("SL EP2", from_entry="EP2 S", stop=activeSL, alert_message=msgExitShort)
+            strategy.exit("RUNNER EP2", from_entry="EP2 S", qty_percent=30, stop=runnerSL)
+
+        if bullSignal
+            strategy.close("EP1 S")
+            if useEP2
+                strategy.close("EP2 S")
+
     else
-        strategy.exit("Exit EP1", from_entry="EP1 S", limit=activeTP, stop=activeSL, alert_message=msgExitShort)
+        // ===== TRUE 100% =====
+        strategy.exit("FULL EP1", from_entry="EP1 S", limit=activeTP, stop=activeSL)
         if useEP2
-            strategy.exit("Exit EP2", from_entry="EP2 S", limit=activeTP, stop=activeSL, alert_message=msgExitShort)
+            strategy.exit("FULL EP2", from_entry="EP2 S", limit=activeTP, stop=activeSL)
+
+if useMarketIfMissed and isShortSetup and strategy.position_size == 0 and close < fib0 and rr_long >= minRR
+    strategy.entry("MKT S", strategy.short)
+    isShortSetup := false
+
+// ==========================
+// RESET
+// ==========================
 if strategy.position_size == 0 and strategy.position_size[1] != 0
     isLongSetup := false
     isShortSetup := false
@@ -704,11 +895,11 @@ if strategy.position_size == 0 and strategy.position_size[1] != 0
 bars_held = strategy.opentrades > 0 ? (bar_index - strategy.opentrades.entry_bar_index(0)) : 0
 if useTimeStop and strategy.position_size > 0 and bars_held >= ftBars
     pct_profit = (close - strategy.position_avg_price) / strategy.position_avg_price * 100
-    if pct_profit < ftMinMove
+    if pct_profit < ftMinMove and not bullSignal
         strategy.close_all(comment="Time Stop", alert_message=msgExitLong)
 if useTimeStop and strategy.position_size < 0 and bars_held >= ftBars
     pct_profit = (strategy.position_avg_price - close) / strategy.position_avg_price * 100
-    if pct_profit < ftMinMove
+    if pct_profit < ftMinMove and not bearSignal
         strategy.close_all(comment="Time Stop", alert_message=msgExitShort)
 f_tf(tf) =>
     tf == "1" ? "1m" : tf == "3" ? "3m" : tf == "5" ? "5m" : tf == "15" ? "15m" : tf == "30" ? "30m" : tf == "45" ? "45m" : tf == "60" ? "1h" : tf == "120" ? "2h" : tf == "240" ? "4h" : tf == "D" or tf == "1D" ? "1d" : tf == "W" or tf == "1W" ? "1w" : tf
