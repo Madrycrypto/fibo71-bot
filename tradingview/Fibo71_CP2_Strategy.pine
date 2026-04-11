@@ -1,0 +1,791 @@
+//@version=5
+strategy('SMC Fibo + LuxAlgo Ultimate', 'LuxAlgo SMC Bot', overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=1.0, margin_long=1, margin_short=1, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+//=====================================================================================================================
+// [1] LUXALGO SMC SETTINGS & CONSTANTS
+//=====================================================================================================================
+BULLISH_LEG = 1
+BEARISH_LEG = 0
+BULLISH = +1
+BEARISH = -1
+GREEN = #089981
+RED = #F23645
+BLUE = #2157f3
+GRAY = #878b94
+MONO_BULLISH = #b2b5be
+MONO_BEARISH = #5d606b
+HISTORICAL = 'Historical'
+PRESENT = 'Present'
+COLORED = 'Colored'
+MONOCHROME = 'Monochrome'
+ALL = 'All'
+BOS = 'BOS'
+CHOCH = 'CHoCH'
+TINY = size.tiny
+SMALL = size.small
+NORMAL = size.normal
+ATR = 'Atr'
+RANGE = 'Cumulative Mean Range'
+CLOSE = 'Close'
+HIGHLOW = 'High/Low'
+SOLID = '⎯⎯⎯'
+DASHED = '----'
+DOTTED = '····'
+G_LUX1 = '📈 [1.A] LUXALGO - GENERAL & INTERNALS'
+G_LUX2 = '📈 [1.B] LUXALGO - SWINGS & LEVELS'
+G_LUX3 = '📈 [1.C] LUXALGO - OB & EQH/EQL'
+modeInput = input.string( HISTORICAL, 'Mode', group = G_LUX1, options = [HISTORICAL, PRESENT])
+styleInput = input.string( COLORED, 'Style', group = G_LUX1, options = [COLORED, MONOCHROME])
+showTrendInput = input(false, 'Color Candles', group = G_LUX1)
+showInternalsInput = input(true, 'Show Internal Structure', group = G_LUX1)
+showInternalBullInput = input.string(ALL, 'Bullish Structure', group = G_LUX1, inline = 'ibull', options = [ALL,BOS,CHOCH])
+internalBullColorInput = input(GREEN, '', group = G_LUX1, inline = 'ibull')
+showInternalBearInput = input.string(ALL, 'Bearish Structure' , group = G_LUX1, inline = 'ibear', options = [ALL,BOS,CHOCH])
+internalBearColorInput = input(RED, '', group = G_LUX1, inline = 'ibear')
+internalFilterConfluenceInput = input(false, 'Confluence Filter', group = G_LUX1)
+internalStructureSize = input.string(TINY, 'Internal Label Size', group = G_LUX1, options = [TINY,SMALL,NORMAL])
+showStructureInput = input(true, 'Show Swing Structure', group = G_LUX2)
+showSwingBullInput = input.string(ALL, 'Bullish Structure', group = G_LUX2, inline = 'bull', options = [ALL,BOS,CHOCH])
+swingBullColorInput = input(GREEN, '', group = G_LUX2, inline = 'bull')
+showSwingBearInput = input.string(ALL, 'Bearish Structure', group = G_LUX2, inline= 'bear', options = [ALL,BOS,CHOCH])
+swingBearColorInput = input(RED, '', group = G_LUX2, inline = 'bear')
+swingStructureSize = input.string(SMALL, 'Swing Label Size', group = G_LUX2, options = [TINY,SMALL,NORMAL])
+showSwingsInput = input(false, 'Show Swings Points', group = G_LUX2, inline = 'swings')
+swingsLengthInput = input.int(50, '', group = G_LUX2, minval = 10, inline = 'swings')
+showHighLowSwingsInput = input(true, 'Show Strong/Weak High/Low',group = G_LUX2)
+showInternalOrderBlocksInput = input(true, 'Internal Order Blocks' , group = G_LUX3, inline = 'iob')
+internalOrderBlocksSizeInput = input.int(5, '', group = G_LUX3, minval = 1, maxval = 20, inline = 'iob')
+showSwingOrderBlocksInput = input(false, 'Swing Order Blocks', group = G_LUX3, inline = 'ob')
+swingOrderBlocksSizeInput = input.int(5, '', group = G_LUX3, minval = 1, maxval = 20, inline = 'ob') 
+orderBlockFilterInput = input.string('Atr', 'Order Block Filter', group = G_LUX3, options = [ATR, RANGE])
+orderBlockMitigationInput = input.string(HIGHLOW, 'Order Block Mitigation', group = G_LUX3, options = [CLOSE,HIGHLOW])
+internalBullishOrderBlockColor = input.color(color.new(#3179f5, 80), 'Internal Bullish OB', group = G_LUX3)
+internalBearishOrderBlockColor = input.color(color.new(#f77c80, 80), 'Internal Bearish OB', group = G_LUX3)
+swingBullishOrderBlockColor = input.color(color.new(#1848cc, 80), 'Bullish OB', group = G_LUX3)
+swingBearishOrderBlockColor = input.color(color.new(#b22833, 80), 'Bearish OB', group = G_LUX3)
+showEqualHighsLowsInput = input(true, 'Equal High/Low', group = G_LUX3)
+equalHighsLowsLengthInput = input.int(3, 'Bars Confirmation', group = G_LUX3, minval = 1)
+equalHighsLowsThresholdInput = input.float(0.1, 'Threshold', group = G_LUX3, minval = 0, maxval = 0.5, step = 0.1)
+equalHighsLowsSizeInput = input.string(TINY, 'Label Size', group = G_LUX3, options = [TINY,SMALL,NORMAL])
+showFairValueGapsInput = input(false, 'Fair Value Gaps', group = G_LUX3)
+fairValueGapsThresholdInput = input(true, 'Auto Threshold', group = G_LUX3)
+fairValueGapsTimeframeInput = input.timeframe('', 'Timeframe', group = G_LUX3)
+fairValueGapsBullColorInput = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = G_LUX3)
+fairValueGapsBearColorInput = input.color(color.new(#ff0008, 70), 'Bearish FVG' , group = G_LUX3)
+fairValueGapsExtendInput = input.int(1, 'Extend FVG', group = G_LUX3, minval = 0)
+//=====================================================================================================================
+// [2] BOT TRADING SETTINGS (FIBO GRID & EXECUTION)
+//=====================================================================================================================
+G_BOT_RISK = "🤖 [2.A] BOT - RYZYKO I SIATKA FIBO"
+G_BOT_FILT = "🤖 [2.B] BOT - PRO FILTRY TRANZAKCJI"
+triggerSource = input.string("Swing BOS", title="Sygnał główny z LuxAlgo do Wejścia (Trigger)", options=["Swing BOS", "Swing CHoCH", "Swing All", "Internal BOS", "Internal CHoCH", "Internal All"], group=G_BOT_RISK)
+riskPercent = input.float(1.0, title="Ryzyko Całkowite (%) - Dzieli się 50/50 jeśli EP2", step=0.1, group=G_BOT_RISK)
+actualRisk = riskPercent
+ep1Min = input.float(0.32, title="EP1 Start", step=0.01, group=G_BOT_RISK)
+ep1Max = input.float(0.38, title="EP1 Koniec", step=0.01, group=G_BOT_RISK)
+useEP2 = input.bool(true, title="Aktywuj drugą strefę EP2", group=G_BOT_RISK)
+ep2Min = input.float(0.62, title="EP2 Start", step=0.01, group=G_BOT_RISK)
+ep2Max = input.float(0.79, title="EP2 Koniec", step=0.01, group=G_BOT_RISK)
+cancelEp2Opposite = input.bool(true, title="Anuluj zawieszone EP2 przy przeciwnym impulsie", group=G_BOT_RISK)
+slOffsetPips = input.float(2.0, title="Stop Loss Offset (Pipsy)", step=0.5, group=G_BOT_RISK)
+tpMode = input.string("100% na TP", title="Zasada Take Profit", options=["100% na TP", "70% TP1 / 30% Runner"], group=G_BOT_RISK)
+trailSLBox = input.bool(true, title="Ruchomy Fibo (SL i cała siatka podąża z ceną)", group=G_BOT_RISK)
+useDateFilter = input.bool(true, title="Ogranicz tranzakcje (Wymóg limitu krypto/walut 3k)", group=G_BOT_RISK)
+maxBarsBack = input.int(5000, title="Zezwalaj na wejścia tylko z ost. X świec", minval=500, maxval=30000, group=G_BOT_RISK)
+tradeLongs = input.bool(true, title="Rozgrywaj pozycje LONG", group=G_BOT_FILT)
+tradeShorts = input.bool(true, title="Rozgrywaj pozycje SHORT", group=G_BOT_FILT)
+reqSweep = input.bool(true, title="Wymagaj Liquidity Sweep (% pod dołkiem)", group=G_BOT_FILT)
+sweepLookback = input.int(10, title="- Zasięg szukania płynności (świece)", group=G_BOT_FILT)
+sweepMinDeviation = input.float(0.0, title="- Minimalne przebicie Sweepa (%)", step=0.01, group=G_BOT_FILT)
+useDisplacement = input.bool(true, title="Wymagaj Impulsu (Displacement)", group=G_BOT_FILT)
+impulseMultiplier = input.float(1.5, title="- Mnożnik Impulsu wolumenu", step=0.1, group=G_BOT_FILT)
+useAntiChop = input.bool(true, title="Anty-Chop (Blokada zafałszowań ruchu)", group=G_BOT_FILT)
+chopLookback = input.int(20, title="- Zasięg Chop Lookback", group=G_BOT_FILT)
+chopThreshold = input.int(3, title="- Próg Chop", group=G_BOT_FILT)
+useTimeStop = input.bool(true, title="Follow-Through (Wyjście z konsoli na plus)", group=G_BOT_FILT)
+ftBars = input.int(8, title="- Max świec oczekiwania", group=G_BOT_FILT)
+ftMinMove = input.float(0.1, title="- Min ruch ratujący przed wyjściem (%)", step=0.02, group=G_BOT_FILT)
+useOnePerStruct = input.bool(true, title="Max 1 Trade na strukturę", group=G_BOT_FILT)
+useBE = input.bool(true, title="Break-Even po nowym kierunku", group=G_BOT_FILT)
+adaptiveOption = input.string("AUTO", title="Tryb Adaptive Mode", options=["OFF", "TREND_ONLY", "COUNTER_TREND", "AUTO"], group=G_BOT_FILT)
+useHTF = input.bool(false, title="Wymagaj Zgodności z HTF", group="🤖 [2.C] BOT - HTF Bias")
+invertHTF = input.bool(false, title="Odwróć Zgodność HTF (Graj kontrę)", group="🤖 [2.C] BOT - HTF Bias")
+htf_res_input = input.string("Auto", title="Interwał HTF", group="🤖 [2.C] BOT - HTF Bias", options=["Auto", "15", "60", "240", "D"])
+botColorSL = input.color(color.red, "Kolor Stop Loss", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botWidthSL = input.int(2, "Grubość Stop Loss", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botColorTP = input.color(color.green, "Kolor Take Profit", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botWidthTP = input.int(2, "Grubość Take Profit", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botColorEP1 = input.color(color.blue, "Kolor / Wypełnienie EP1", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botWidthEP1 = input.int(1, "Grubość Krawędzi EP1", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botColorEP2 = input.color(color.purple, "Kolor / Wypełnienie EP2", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+botWidthEP2 = input.int(1, "Grubość Krawędzi EP2", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
+useATR = input.bool(true, title="Filtr Zmienności ATR", group=G_BOT_FILT)
+atrLen = input.int(14, title="- Długość bazowa ATR", group=G_BOT_FILT)
+atrSmooth = input.int(50, title="- Uśrednienie ATR", group=G_BOT_FILT)
+atrThresholdMult = input.float(1.0, title="- Mnożnik progu", step=0.1, group=G_BOT_FILT)
+webhookToken = input.string("token", title="Token Webhook", group="Webhook")
+showDebugPanel = input.bool(true, title="Pokaż wskaźniki Debug Panel w HUD", group="Wizualizacja")
+//=====================================================================================================================
+// LUXALGO ENGINE (TYPES & VARIABLES)
+//=====================================================================================================================
+type alerts
+    bool internalBullishBOS = false
+    bool internalBearishBOS = false
+    bool internalBullishCHoCH = false
+    bool internalBearishCHoCH = false
+    bool swingBullishBOS = false
+    bool swingBearishBOS = false
+    bool swingBullishCHoCH = false
+    bool swingBearishCHoCH = false
+    bool internalBullishOrderBlock = false
+    bool internalBearishOrderBlock = false
+    bool swingBullishOrderBlock = false
+    bool swingBearishOrderBlock = false
+    bool equalHighs = false
+    bool equalLows = false
+    bool bullishFairValueGap = false
+    bool bearishFairValueGap = false
+type trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+type fairValueGap
+    float top
+    float bottom
+    int bias
+    box topBox
+    box bottomBox
+type trend
+    int bias
+type equalDisplay
+    line l_ine = na
+    label l_abel = na
+type pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
+type orderBlock
+    float barHigh
+    float barLow
+    int barTime
+    int bias
+var pivot swingHigh = pivot.new(na,na,false)
+var pivot swingLow = pivot.new(na,na,false)
+var pivot internalHigh = pivot.new(na,na,false)
+var pivot internalLow = pivot.new(na,na,false)
+var pivot equalHigh = pivot.new(na,na,false)
+var pivot equalLow = pivot.new(na,na,false)
+var trend swingTrend = trend.new(0)
+var trend internalTrend = trend.new(0)
+var equalDisplay equalHighDisplay = equalDisplay.new()
+var equalDisplay equalLowDisplay = equalDisplay.new()
+var array<fairValueGap> fairValueGaps = array.new<fairValueGap>()
+var array<float> parsedHighs = array.new<float>()
+var array<float> parsedLows = array.new<float>()
+var array<float> highs = array.new<float>()
+var array<float> lows = array.new<float>()
+var array<int> times = array.new<int>()
+var trailingExtremes trailing = trailingExtremes.new()
+var array<orderBlock> swingOrderBlocks = array.new<orderBlock>()
+var array<orderBlock> internalOrderBlocks = array.new<orderBlock>()
+var array<box> swingOrderBlocksBoxes = array.new<box>()
+var array<box> internalOrderBlocksBoxes = array.new<box>()
+var swingBullishColor = styleInput == MONOCHROME ? MONO_BULLISH : swingBullColorInput
+var swingBearishColor = styleInput == MONOCHROME ? MONO_BEARISH : swingBearColorInput
+var fairValueGapBullishColor = styleInput == MONOCHROME ? color.new(MONO_BULLISH,70) : fairValueGapsBullColorInput
+var fairValueGapBearishColor = styleInput == MONOCHROME ? color.new(MONO_BEARISH,70) : fairValueGapsBearColorInput
+var initialTime = time
+if barstate.isfirst
+    if showSwingOrderBlocksInput
+        for index = 1 to swingOrderBlocksSizeInput
+            swingOrderBlocksBoxes.push(box.new(na,na,na,na,xloc=xloc.bar_time,extend=extend.right))
+    if showInternalOrderBlocksInput
+        for index = 1 to internalOrderBlocksSizeInput
+            internalOrderBlocksBoxes.push(box.new(na,na,na,na,xloc=xloc.bar_time,extend=extend.right))
+bearishOrderBlockMitigationSource = orderBlockMitigationInput == CLOSE ? close : high
+bullishOrderBlockMitigationSource = orderBlockMitigationInput == CLOSE ? close : low
+atrMeasure = ta.atr(200)
+volatilityMeasure = orderBlockFilterInput == ATR ? atrMeasure : ta.cum(ta.tr)/bar_index
+highVolatilityBar = (high - low) >= (2 * volatilityMeasure)
+parsedHigh = highVolatilityBar ? low : high
+parsedLow = highVolatilityBar ? high : low
+var int arrayOffset = 0
+parsedHighs.push(parsedHigh)
+parsedLows.push(parsedLow)
+highs.push(high)
+lows.push(low)
+times.push(time)
+if parsedHighs.size() > 99000
+    parsedHighs.shift()
+    parsedLows.shift()
+    highs.shift()
+    lows.shift()
+    times.shift()
+    arrayOffset += 1
+// LUX FUNCTIONS
+leg(int size) =>
+    var leg = 0    
+    if high[size] > ta.highest(size)
+        leg := BEARISH_LEG
+    else if low[size] < ta.lowest(size)
+        leg := BULLISH_LEG
+    leg
+startOfNewLeg(int leg) => ta.change(leg) != 0
+startOfBearishLeg(int leg) => ta.change(leg) == -1
+startOfBullishLeg(int leg) => ta.change(leg) == +1
+drawLabel(int labelTime, float labelPrice, string tag, color labelColor, string labelStyle) =>    
+    var label l_abel = na
+    if modeInput == PRESENT
+        l_abel.delete()
+    l_abel := label.new(chart.point.new(labelTime,na,labelPrice),tag,xloc.bar_time,color=color(na),textcolor=labelColor,style=labelStyle,size=size.small)
+drawEqualHighLow(pivot p_ivot, float level, int size, bool equalHighArg) =>
+    equalDisplay e_qualDisplay = equalHighArg ? equalHighDisplay : equalLowDisplay
+    string tag = equalHighArg ? 'EQH' : 'EQL'
+    color equalColor = equalHighArg ? swingBearishColor : swingBullishColor
+    string labelStyle = equalHighArg ? label.style_label_down : label.style_label_up
+    if modeInput == PRESENT
+        line.delete(e_qualDisplay.l_ine)
+        label.delete(e_qualDisplay.l_abel)
+    e_qualDisplay.l_ine := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time[size],na,level), xloc=xloc.bar_time, color=equalColor, style=line.style_dotted)
+    labelPosition = math.round(0.5*(p_ivot.barIndex + bar_index - size))
+    e_qualDisplay.l_abel := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color=color(na), textcolor=equalColor, style=labelStyle, size=equalHighsLowsSizeInput)
+// currentAlerts is recreated each bar
+alerts currentAlerts = alerts.new()
+getCurrentStructure(int size, bool equalHighLow = false, bool internal = false) =>        
+    currentLeg = leg(size)
+    newPivot = startOfNewLeg(currentLeg)
+    pivotLow = startOfBullishLeg(currentLeg)
+    pivotHigh = startOfBearishLeg(currentLeg)
+    if newPivot
+        if pivotLow
+            pivot p_ivot = equalHighLow ? equalLow : internal ? internalLow : swingLow    
+            if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure                
+                drawEqualHighLow(p_ivot, low[size], size, false)
+                currentAlerts.equalLows := true
+            p_ivot.lastLevel := p_ivot.currentLevel
+            p_ivot.currentLevel := low[size]
+            p_ivot.crossed := false
+            p_ivot.barTime := time[size]
+            p_ivot.barIndex := bar_index[size]
+            if not equalHighLow and not internal
+                trailing.bottom := p_ivot.currentLevel
+                trailing.lastBottomTime := p_ivot.barTime
+            if showSwingsInput and not internal and not equalHighLow
+                drawLabel(time[size], p_ivot.currentLevel, p_ivot.currentLevel < p_ivot.lastLevel ? 'LL' : 'HL', swingBullishColor, label.style_label_up)            
+        else
+            pivot p_ivot = equalHighLow ? equalHigh : internal ? internalHigh : swingHigh
+            if equalHighLow and math.abs(p_ivot.currentLevel - high[size]) < equalHighsLowsThresholdInput * atrMeasure
+                drawEqualHighLow(p_ivot,high[size],size,true)
+                currentAlerts.equalHighs := true               
+            p_ivot.lastLevel := p_ivot.currentLevel
+            p_ivot.currentLevel := high[size]
+            p_ivot.crossed := false
+            p_ivot.barTime := time[size]
+            p_ivot.barIndex := bar_index[size]
+            if not equalHighLow and not internal
+                trailing.top := p_ivot.currentLevel
+                trailing.lastTopTime := p_ivot.barTime
+            if showSwingsInput and not internal and not equalHighLow
+                drawLabel(time[size], p_ivot.currentLevel, p_ivot.currentLevel > p_ivot.lastLevel ? 'HH' : 'LH', swingBearishColor, label.style_label_down)
+drawStructure(pivot p_ivot, string tag, color structureColor, string lineStyle, string labelStyle, string labelSize) =>    
+    var line l_ine = line.new(na,na,na,na,xloc = xloc.bar_time)
+    var label l_abel = label.new(na,na)
+    if modeInput == PRESENT
+        l_ine.delete()
+        l_abel.delete()
+    l_ine := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time,na,p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
+    l_abel := label.new(chart.point.new(na,math.round(0.5*(p_ivot.barIndex+bar_index)),p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size=labelSize)
+storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
+    if (not internal and showSwingOrderBlocksInput) or (internal and showInternalOrderBlocksInput)
+        array<float> a_rray = na
+        int parsedIndex = na
+        int safeStartIdx = math.max(0, math.max(nz(p_ivot.barIndex) - arrayOffset, (bar_index - arrayOffset) - 300))
+        int endIdx = math.max(0, bar_index - arrayOffset)
+        if endIdx <= safeStartIdx
+            endIdx := safeStartIdx + 1
+        
+        if bias == BEARISH
+            a_rray := parsedHighs.slice(safeStartIdx, endIdx)
+            parsedIndex := safeStartIdx + a_rray.indexof(a_rray.max())  
+        else
+            a_rray := parsedLows.slice(safeStartIdx, endIdx)
+            parsedIndex := safeStartIdx + a_rray.indexof(a_rray.min())                        
+        orderBlock o_rderBlock = orderBlock.new(parsedHighs.get(parsedIndex), parsedLows.get(parsedIndex), times.get(parsedIndex),bias)
+        array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+        if orderBlocks.size() >= 100
+            orderBlocks.pop()
+        orderBlocks.unshift(o_rderBlock)
+displayStructure(bool internal = false) =>
+    var bullishBar = true
+    var bearishBar = true
+    if internalFilterConfluenceInput
+        bullishBar := high - math.max(close, open) > math.min(close, open - low)
+        bearishBar := high - math.max(close, open) < math.min(close, open - low)
+    pivot p_ivot = internal ? internalHigh : swingHigh
+    trend t_rend = internal ? internalTrend : swingTrend
+    lineStyle = internal ? line.style_dashed : line.style_solid
+    labelSize = internal ? internalStructureSize : swingStructureSize
+    extraCondition = internal ? internalHigh.currentLevel != swingHigh.currentLevel and bullishBar : true
+    bullishColor = styleInput == MONOCHROME ? MONO_BULLISH : internal ? internalBullColorInput : swingBullColorInput
+    if ta.crossover(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
+        string tag = t_rend.bias == BEARISH ? CHOCH : BOS
+        if internal
+            currentAlerts.internalBullishCHoCH := tag == CHOCH
+            currentAlerts.internalBullishBOS := tag == BOS
+        else
+            currentAlerts.swingBullishCHoCH := tag == CHOCH
+            currentAlerts.swingBullishBOS := tag == BOS
+        p_ivot.crossed := true
+        t_rend.bias := BULLISH
+        displayCondition = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != CHOCH) or (showInternalBullInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != CHOCH) or (showSwingBullInput == CHOCH and tag == CHOCH))
+        if displayCondition                        
+            drawStructure(p_ivot,tag,bullishColor,lineStyle,label.style_label_down,labelSize)
+        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+            storeOrdeBlock(p_ivot,internal,BULLISH)
+    p_ivot := internal ? internalLow : swingLow    
+    extraCondition := internal ? internalLow.currentLevel != swingLow.currentLevel and bearishBar : true
+    bearishColor = styleInput == MONOCHROME ? MONO_BEARISH : internal ? internalBearColorInput : swingBearColorInput
+    if ta.crossunder(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
+        string tag = t_rend.bias == BULLISH ? CHOCH : BOS
+        if internal
+            currentAlerts.internalBearishCHoCH := tag == CHOCH
+            currentAlerts.internalBearishBOS := tag == BOS
+        else
+            currentAlerts.swingBearishCHoCH := tag == CHOCH
+            currentAlerts.swingBearishBOS := tag == BOS
+        p_ivot.crossed := true
+        t_rend.bias := BEARISH
+        displayCondition = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != CHOCH) or (showInternalBearInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != CHOCH) or (showSwingBearInput == CHOCH and tag == CHOCH))
+        if displayCondition                        
+            drawStructure(p_ivot,tag,bearishColor,lineStyle,label.style_label_up,labelSize)
+        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+            storeOrdeBlock(p_ivot,internal,BEARISH)
+deleteOrderBlocks(bool internal = false) =>
+    array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    for [index,eachOrderBlock] in orderBlocks
+        bool crossedOderBlock = false
+        if bearishOrderBlockMitigationSource > eachOrderBlock.barHigh and eachOrderBlock.bias == BEARISH
+            crossedOderBlock := true
+        else if bullishOrderBlockMitigationSource < eachOrderBlock.barLow and eachOrderBlock.bias == BULLISH
+            crossedOderBlock := true
+        if crossedOderBlock                    
+            orderBlocks.remove(index)            
+drawOrderBlocks(bool internal = false) =>        
+    array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    orderBlocksSize = orderBlocks.size()
+    if orderBlocksSize > 0        
+        maxOrderBlocks = internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput
+        array<orderBlock> parsedOrdeBlocks = orderBlocks.slice(0, math.min(maxOrderBlocks,orderBlocksSize))
+        array<box> b_oxes = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes        
+        for [index,eachOrderBlock] in parsedOrdeBlocks
+            orderBlockColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
+            box b_ox = b_oxes.get(index)
+            b_ox.set_top_left_point(chart.point.new(eachOrderBlock.barTime,na,eachOrderBlock.barHigh))
+            b_ox.set_bottom_right_point(chart.point.new(last_bar_time,na,eachOrderBlock.barLow))        
+            b_ox.set_bgcolor(orderBlockColor)
+// UX DRAWS
+candleColor = not showTrendInput ? color(na) : (internalTrend.bias == BULLISH ? swingBullishColor : swingBearishColor)
+plotcandle(open, high, low, close, color=candleColor, wickcolor=candleColor, bordercolor=candleColor, title="SMC Kolory Świec (Wygląd)")
+getCurrentStructure(swingsLengthInput,false)
+getCurrentStructure(5,false,true)
+if showEqualHighsLowsInput
+    getCurrentStructure(equalHighsLowsLengthInput,true)
+if showInternalsInput or showInternalOrderBlocksInput or showTrendInput
+    displayStructure(true)
+if showStructureInput or showSwingOrderBlocksInput or showHighLowSwingsInput
+    displayStructure()
+if showInternalOrderBlocksInput
+    deleteOrderBlocks(true)
+if showSwingOrderBlocksInput
+    deleteOrderBlocks()
+if barstate.islastconfirmedhistory or barstate.islast
+    if showInternalOrderBlocksInput        
+        drawOrderBlocks(true)
+    if showSwingOrderBlocksInput        
+        drawOrderBlocks()
+//=====================================================================================================================
+// BOT LOGIC INTERCEPT - MAPPING LUXALGO TO FIBO BOT
+//=====================================================================================================================
+f_get_auto_htf() =>
+    auto_res = "D"
+    if timeframe.isseconds or (timeframe.isminutes and timeframe.multiplier <= 15)
+        auto_res := "60"
+    else if timeframe.isminutes and timeframe.multiplier <= 60
+        auto_res := "240"
+    else if timeframe.isminutes and timeframe.multiplier <= 240
+        auto_res := "D"
+    else if timeframe.isdaily
+        auto_res := "W"
+    auto_res
+htf_res = htf_res_input == "Auto" ? f_get_auto_htf() : htf_res_input
+f_htf_trend(len) =>
+    var int t_trend = 0
+    var float t_lastPH = na
+    var float t_lastPL = na
+    ph = ta.pivothigh(high, len, len)
+    pl = ta.pivotlow(low, len, len)
+    if not na(ph)
+        t_lastPH := ph
+    if not na(pl)
+        t_lastPL := pl
+    if ta.crossover(close, t_lastPH)
+        t_trend := 1 
+    if ta.crossunder(close, t_lastPL)
+        t_trend := -1 
+    t_trend
+htf_trend = request.security(syminfo.tickerid, htf_res, f_htf_trend(10), lookahead=barmerge.lookahead_on)
+reqHtfBull = invertHTF ? -1 : 1
+reqHtfBear = invertHTF ? 1 : -1
+// FILTRY BOT'A
+currentATR = ta.atr(atrLen)
+baselineATR = ta.sma(currentATR, atrSmooth)
+condAtrAct = currentATR > (baselineATR * atrThresholdMult)
+isExpansion = not useATR or condAtrAct
+bodySize = math.abs(close - open)
+avgBody = ta.sma(bodySize, 10)
+condImpulseAct = bodySize > (avgBody * impulseMultiplier)
+recentImpulse = ta.highest(condImpulseAct ? 1 : 0, 3) > 0
+isDisplacement = not useDisplacement or recentImpulse
+// MAPOWANIE TRIGGERÓW STRUCTURY LUXALGO:
+bullSignal = triggerSource == "Swing BOS" ? currentAlerts.swingBullishBOS : triggerSource == "Swing CHoCH" ? currentAlerts.swingBullishCHoCH : triggerSource == "Swing All" ? (currentAlerts.swingBullishBOS or currentAlerts.swingBullishCHoCH) : triggerSource == "Internal BOS" ? currentAlerts.internalBullishBOS : triggerSource == "Internal CHoCH" ? currentAlerts.internalBullishCHoCH : (currentAlerts.internalBullishBOS or currentAlerts.internalBullishCHoCH)
+bearSignal = triggerSource == "Swing BOS" ? currentAlerts.swingBearishBOS : triggerSource == "Swing CHoCH" ? currentAlerts.swingBearishCHoCH : triggerSource == "Swing All" ? (currentAlerts.swingBearishBOS or currentAlerts.swingBearishCHoCH) : triggerSource == "Internal BOS" ? currentAlerts.internalBearishBOS : triggerSource == "Internal CHoCH" ? currentAlerts.internalBearishCHoCH : (currentAlerts.internalBearishBOS or currentAlerts.internalBearishCHoCH)
+var int adaptiveBias = 0 
+if bullSignal
+    if adaptiveOption == "AUTO" or adaptiveOption == "TREND_ONLY"
+        adaptiveBias := 1
+if bearSignal
+    if adaptiveOption == "AUTO" or adaptiveOption == "TREND_ONLY"
+        adaptiveBias := -1
+var bool hasBullishSweep = false
+var bool hasBearishSweep = false
+localLow = ta.lowest(low[1], sweepLookback)
+localHigh = ta.highest(high[1], sweepLookback)
+var float activeSweepTargetL = na
+var float activeSweepTargetS = na
+if na(activeSweepTargetL) and low <= localLow * (1 - sweepMinDeviation/100)
+    activeSweepTargetL := localLow
+if na(activeSweepTargetS) and high >= localHigh * (1 + sweepMinDeviation/100)
+    activeSweepTargetS := localHigh
+condSweepBullAct = not na(activeSweepTargetL) and close > activeSweepTargetL
+if condSweepBullAct
+    hasBullishSweep := true
+    activeSweepTargetL := na
+    if adaptiveOption == "AUTO" or adaptiveOption == "COUNTER_TREND"
+        adaptiveBias := 1 
+        
+condSweepBearAct = not na(activeSweepTargetS) and close < activeSweepTargetS
+if condSweepBearAct
+    hasBearishSweep := true
+    activeSweepTargetS := na
+    if adaptiveOption == "AUTO" or adaptiveOption == "COUNTER_TREND"
+        adaptiveBias := -1 
+if ta.cross(close, ta.sma(close, 20))
+    hasBullishSweep := false
+    hasBearishSweep := false
+    activeSweepTargetL := na
+    activeSweepTargetS := na
+// CHOP LICZNIK OPARTY O LUXALGO CHOCH
+anyBullCHoCH = currentAlerts.swingBullishCHoCH or currentAlerts.internalBullishCHoCH
+anyBearCHoCH = currentAlerts.swingBearishCHoCH or currentAlerts.internalBearishCHoCH
+choch_sum = math.sum(anyBullCHoCH or anyBearCHoCH ? 1 : 0, chopLookback)
+condChopAct = choch_sum >= chopThreshold
+isChop = useAntiChop and condChopAct
+bool isAdaptiveBullish = adaptiveOption == "OFF" or adaptiveBias >= 0
+bool isAdaptiveBearish = adaptiveOption == "OFF" or adaptiveBias <= 0
+bool isWithinDate = not useDateFilter or (bar_index >= (last_bar_index - maxBarsBack))
+triggerBullishMove = tradeLongs and isWithinDate and (not useHTF or htf_trend == reqHtfBull) and bullSignal and not isChop and isAdaptiveBullish and isExpansion and isDisplacement
+triggerBearishMove = tradeShorts and isWithinDate and (not useHTF or htf_trend == reqHtfBear) and bearSignal and not isChop and isAdaptiveBearish and isExpansion and isDisplacement
+// POZYSKIWANIE DOŁKÓW STRUKTURY LUXALGO:
+isInternalTrigger = triggerSource == "Internal BOS" or triggerSource == "Internal CHoCH" or triggerSource == "Internal All"
+startFib_Long = isInternalTrigger ? internalLow.currentLevel  : swingLow.currentLevel
+startFib_Short= isInternalTrigger ? internalHigh.currentLevel : swingHigh.currentLevel
+var float traded_fib_long = na
+var float traded_fib_short = na
+if strategy.position_size > 0
+    traded_fib_long := startFib_Long
+if strategy.position_size < 0
+    traded_fib_short := startFib_Short
+bool freshLongStruct = not useOnePerStruct or (na(traded_fib_long) or traded_fib_long != startFib_Long)
+bool freshShortStruct = not useOnePerStruct or (na(traded_fib_short) or traded_fib_short != startFib_Short)
+var float fib100 = na  
+var float fib0 = na    
+var bool  isLongSetup = false
+var bool  isShortSetup = false
+if triggerBullishMove and (not reqSweep or hasBullishSweep) and freshLongStruct
+    if strategy.position_size == 0 
+        fib100 := startFib_Long 
+        fib0 := high    
+        isLongSetup := true
+        isShortSetup := false
+        hasBullishSweep := false 
+if triggerBearishMove and (not reqSweep or hasBearishSweep) and freshShortStruct
+    if strategy.position_size == 0
+        fib100 := startFib_Short 
+        fib0 := low     
+        isShortSetup := true
+        isLongSetup := false
+        hasBearishSweep := false 
+if isLongSetup and strategy.position_size == 0
+    if high > fib0
+        if trailSLBox
+            fib100 := fib100 + (high - fib0)
+        fib0 := high
+        
+if isShortSetup and strategy.position_size == 0
+    if low < fib0
+        if trailSLBox
+            fib100 := fib100 - (fib0 - low)
+        fib0 := low
+sym = syminfo.tickerid
+isForex = syminfo.type == "forex" or syminfo.type == "cfd"
+isCrypto = syminfo.type == "crypto"
+pip_mult = isForex ? 10 : (isCrypto ? 100 : 1)
+slDistance = slOffsetPips * pip_mult * syminfo.mintick
+var float activeSL = na
+var float activeTP = na
+var bool isLongBE = false
+var bool isShortBE = false
+bool tpModeB = tpMode == "70% TP1 / 30% Runner"
+var float ep1MinDraw = na
+var float ep1MaxDraw = na
+var float ep2MinDraw = na
+var float ep2MaxDraw = na
+bool isValidDraw = (isLongSetup or isShortSetup) and not (triggerBullishMove or triggerBearishMove)
+visualp1Min = isValidDraw ? ep1MinDraw : na
+visualp1Max = isValidDraw ? ep1MaxDraw : na
+visualp2Min = isValidDraw ? ep2MinDraw : na
+visualp2Max = isValidDraw ? ep2MaxDraw : na
+plot(isValidDraw and not na(activeSL) ? activeSL : na, color=botColorSL, style=plot.style_linebr, linewidth=botWidthSL, title="Stop Loss (Linia Fibo)")
+plot(isValidDraw and not na(activeTP) ? activeTP : na, color=botColorTP, style=plot.style_linebr, linewidth=botWidthTP, title="Take Profit (Linia Fibo)")
+p1MinL = plot(visualp1Min, color=botColorEP1, style=plot.style_linebr, linewidth=botWidthEP1, title="EP1 Start (Linia)")
+p1MaxL = plot(visualp1Max, color=botColorEP1, style=plot.style_linebr, linewidth=botWidthEP1, title="EP1 Koniec (Linia)")
+fill(p1MinL, p1MaxL, color=color.new(botColorEP1, 80), title="Strefa Wypełnienia EP1")
+p2MinL = plot(visualp2Min, color=botColorEP2, style=plot.style_linebr, linewidth=botWidthEP2, title="EP2 Start (Linia)")
+p2MaxL = plot(visualp2Max, color=botColorEP2, style=plot.style_linebr, linewidth=botWidthEP2, title="EP2 Koniec (Linia)")
+fill(p2MinL, p2MaxL, color=color.new(botColorEP2, 80), title="Strefa Wypełnienia EP2")
+calcQty(entryPrice, stopLossPrice, riskFactor) =>
+    riskAmount = strategy.equity * (riskFactor / 100.0)
+    dist = math.abs(entryPrice - stopLossPrice)
+    qty = dist > 0 ? (riskAmount / dist) : 0
+    qty
+if cancelEp2Opposite
+    if strategy.position_size == 0
+        if isLongSetup and anyBearCHoCH
+            isLongSetup := false
+            strategy.cancel_all()
+        if isShortSetup and anyBullCHoCH
+            isShortSetup := false
+            strategy.cancel_all()
+    else
+        if isLongSetup and anyBearCHoCH
+            strategy.cancel("EP2 L")
+        if isShortSetup and anyBullCHoCH
+            strategy.cancel("EP2 S")
+if isLongSetup
+    longSL = fib100 - slDistance  
+    longTP = fib0    
+    
+    EP1_limit = fib0 - (fib0 - fib100) * ep1Min  
+    EP1_max = fib0 - (fib0 - fib100) * ep1Max
+    EP2_limit = useEP2 ? (fib0 - (fib0 - fib100) * ep2Min) : na
+    EP2_max = useEP2 ? (fib0 - (fib0 - fib100) * ep2Max) : na
+    
+    ep1MinDraw := EP1_limit
+    ep1MaxDraw := EP1_max
+    ep2MinDraw := EP2_limit
+    ep2MaxDraw := EP2_max
+    
+    if low < longSL 
+        isLongSetup := false
+        strategy.cancel_all()
+    else
+        float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
+        float riskAlloc_EP2 = actualRisk / 2.0
+        qty1 = calcQty(EP1_limit, longSL, riskAlloc_EP1)
+        activeSL := longSL
+        activeTP := longTP
+        
+        msgEnterL1 = '{"token": "' + webhookToken + '", "action": "ENTER_EP1_LONG", "symbol": "' + sym + '"}'
+        strategy.entry("EP1 L", strategy.long, qty=qty1, limit=EP1_limit, alert_message=msgEnterL1)
+        
+        if useEP2
+            qty2 = calcQty(EP2_limit, longSL, riskAlloc_EP2)
+            msgEnterL2 = '{"token": "' + webhookToken + '", "action": "ENTER_EP2_LONG", "symbol": "' + sym + '"}'
+            strategy.entry("EP2 L", strategy.long, qty=qty2, limit=EP2_limit, alert_message=msgEnterL2)
+        
+        if high > longTP
+            isLongSetup := false
+            strategy.cancel("EP2 L")
+if isShortSetup
+    shortSL = fib100 + slDistance 
+    shortTP = fib0   
+    
+    EP1_limit = fib0 + (fib100 - fib0) * ep1Min
+    EP1_max = fib0 + (fib100 - fib0) * ep1Max
+    EP2_limit = useEP2 ? (fib0 + (fib100 - fib0) * ep2Min) : na
+    EP2_max = useEP2 ? (fib0 + (fib100 - fib0) * ep2Max) : na
+    
+    ep1MinDraw := EP1_limit
+    ep1MaxDraw := EP1_max
+    ep2MinDraw := EP2_limit
+    ep2MaxDraw := EP2_max
+    
+    if high > shortSL
+        isShortSetup := false
+        strategy.cancel_all()
+    else
+        float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
+        float riskAlloc_EP2 = actualRisk / 2.0
+        qty1 = calcQty(EP1_limit, shortSL, riskAlloc_EP1)
+        activeSL := shortSL
+        activeTP := shortTP
+        
+        msgEnterS1 = '{"token": "' + webhookToken + '", "action": "ENTER_EP1_SHORT", "symbol": "' + sym + '"}'
+        strategy.entry("EP1 S", strategy.short, qty=qty1, limit=EP1_limit, alert_message=msgEnterS1)
+        
+        if useEP2
+            qty2 = calcQty(EP2_limit, shortSL, riskAlloc_EP2)
+            msgEnterS2 = '{"token": "' + webhookToken + '", "action": "ENTER_EP2_SHORT", "symbol": "' + sym + '"}'
+            strategy.entry("EP2 S", strategy.short, qty=qty2, limit=EP2_limit, alert_message=msgEnterS2)
+        if low < shortTP
+            isShortSetup := false
+            strategy.cancel("EP2 S")
+// ZARZĄDZANIE OTWARTĄ POZYCJĄ I SCALE-OUT
+msgExitLong  = '{"token": "' + webhookToken + '", "action": "EXIT_LONG", "symbol": "' + sym + '"}'
+msgExitShort = '{"token": "' + webhookToken + '", "action": "EXIT_SHORT", "symbol": "' + sym + '"}'
+if strategy.position_size > 0
+    if bearSignal // ODWRÓCENIE TRENDU ZAMYKA RUNNERY!
+        strategy.close_all(comment="Odwrotny Sygnał (Zamknięcie Runnera)", alert_message=msgExitLong)
+    if useBE and not isLongBE and bullSignal
+        activeSL := strategy.position_avg_price  
+        isLongBE := true
+        alert('{"token": "' + webhookToken + '", "action": "MOVE_TO_BE", "side": "LONG", "symbol": "' + sym + '", "new_sl": ' + str.tostring(activeSL) + '}', alert.freq_once_per_bar_close)
+    
+    if tpModeB
+        strategy.exit("TP1 EP1", from_entry="EP1 L", qty_percent=70, limit=activeTP, alert_message=msgExitLong)
+        if useEP2
+            strategy.exit("TP1 EP2", from_entry="EP2 L", qty_percent=70, limit=activeTP, alert_message=msgExitLong)
+        strategy.exit("SL EP1", from_entry="EP1 L", stop=activeSL, alert_message=msgExitLong) 
+        if useEP2
+            strategy.exit("SL EP2", from_entry="EP2 L", stop=activeSL, alert_message=msgExitLong)
+    else
+        strategy.exit("Exit EP1", from_entry="EP1 L", limit=activeTP, stop=activeSL, alert_message=msgExitLong)
+        if useEP2
+            strategy.exit("Exit EP2", from_entry="EP2 L", limit=activeTP, stop=activeSL, alert_message=msgExitLong)
+if strategy.position_size < 0
+    if bullSignal // ODWRÓCENIE TRENDU ZAMYKA RUNNERY!
+        strategy.close_all(comment="Odwrotny Sygnał (Zamknięcie Runnera)", alert_message=msgExitShort)
+    if useBE and not isShortBE and bearSignal
+        activeSL := strategy.position_avg_price 
+        isShortBE := true
+        alert('{"token": "' + webhookToken + '", "action": "MOVE_TO_BE", "side": "SHORT", "symbol": "' + sym + '", "new_sl": ' + str.tostring(activeSL) + '}', alert.freq_once_per_bar_close)
+    
+    if tpModeB
+        strategy.exit("TP1 EP1", from_entry="EP1 S", qty_percent=70, limit=activeTP, alert_message=msgExitShort)
+        if useEP2
+            strategy.exit("TP1 EP2", from_entry="EP2 S", qty_percent=70, limit=activeTP, alert_message=msgExitShort)
+        strategy.exit("SL EP1", from_entry="EP1 S", stop=activeSL, alert_message=msgExitShort)
+        if useEP2
+            strategy.exit("SL EP2", from_entry="EP2 S", stop=activeSL, alert_message=msgExitShort)
+    else
+        strategy.exit("Exit EP1", from_entry="EP1 S", limit=activeTP, stop=activeSL, alert_message=msgExitShort)
+        if useEP2
+            strategy.exit("Exit EP2", from_entry="EP2 S", limit=activeTP, stop=activeSL, alert_message=msgExitShort)
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    isLongSetup := false
+    isShortSetup := false
+    isLongBE := false 
+    isShortBE := false 
+    strategy.cancel_all()
+bars_held = strategy.opentrades > 0 ? (bar_index - strategy.opentrades.entry_bar_index(0)) : 0
+if useTimeStop and strategy.position_size > 0 and bars_held >= ftBars
+    pct_profit = (close - strategy.position_avg_price) / strategy.position_avg_price * 100
+    if pct_profit < ftMinMove
+        strategy.close_all(comment="Time Stop", alert_message=msgExitLong)
+if useTimeStop and strategy.position_size < 0 and bars_held >= ftBars
+    pct_profit = (strategy.position_avg_price - close) / strategy.position_avg_price * 100
+    if pct_profit < ftMinMove
+        strategy.close_all(comment="Time Stop", alert_message=msgExitShort)
+f_tf(tf) =>
+    tf == "1" ? "1m" : tf == "3" ? "3m" : tf == "5" ? "5m" : tf == "15" ? "15m" : tf == "30" ? "30m" : tf == "45" ? "45m" : tf == "60" ? "1h" : tf == "120" ? "2h" : tf == "240" ? "4h" : tf == "D" or tf == "1D" ? "1d" : tf == "W" or tf == "1W" ? "1w" : tf
+var table hud = table.new(position.top_right, 11, 7, bgcolor=color.new(color.black, 100)) 
+if barstate.isfirst
+    for i = 0 to 5
+        table.merge_cells(hud, 0, i, 10, i)
+if barstate.islast
+    int l_count = 0
+    int s_count = 0
+    int l_w = 0
+    int s_w = 0
+    float l_prof = 0.0
+    float s_prof = 0.0
+    
+    int max_iters = 100
+    int safeEnd = strategy.closedtrades > 0 ? strategy.closedtrades - 1 : -1
+    for iter = 0 to (safeEnd == -1 ? 0 : safeEnd)
+        if safeEnd == -1
+            break
+        int i = safeEnd - iter
+        if i < 0 or max_iters <= 0
+            break
+        max_iters -= 1
+        if l_count >= 10 and s_count >= 10
+            break
+            
+        string id = strategy.closedtrades.entry_id(i)
+        float prof = strategy.closedtrades.profit(i)
+        
+        if not na(prof)
+            if (id == "EP1 L" or id == "EP2 L" or id == "Buy") and l_count < 10
+                l_prof += prof
+                l_count += 1
+                if prof > 0
+                    l_w += 1
+            else if (id == "EP1 S" or id == "EP2 S" or id == "Sell") and s_count < 10
+                s_prof += prof
+                s_count += 1
+                if prof > 0
+                    s_w += 1
+    atr_text = not useATR ? "ATR: [WYŁĄCZONY]" : (condAtrAct ? "ATR: 🟢 RUCH (AKTYWNY)" : "ATR: 🟠 KONSOLA (BLOKADA)")
+    atr_col = not useATR ? color.gray : (condAtrAct ? color.new(color.green, 20) : color.new(color.orange, 20))
+    adaptive_text = adaptiveOption == "OFF" ? "ADAPTIVE: [OFF]" : (adaptiveBias == 1 ? "ADAPTIVE: [TYLKO LONGI]" : (adaptiveBias == -1 ? "ADAPTIVE: [TYLKO SHORTY]" : "ADAPTIVE: CZEKAM"))
+    adaptive_col = adaptiveOption == "OFF" ? color.gray : (adaptiveBias == 1 ? color.new(color.green, 20) : (adaptiveBias == -1 ? color.new(color.red, 20) : color.gray))
+    float valid_cap = strategy.initial_capital > 0 ? strategy.initial_capital : 10000.0
+    float total_prof = l_prof + s_prof
+    float total_pct = (total_prof / valid_cap) * 100
+    string total_pct_str = (total_pct >= 0 ? "+" : "") + str.tostring(total_pct, "#.##") + "%"
+    string total_prof_str = (total_prof >= 0 ? "+" : "") + str.tostring(total_prof, "#.##") + "$"
+    color total_col = total_prof > 0 ? color.new(color.green, 20) : (total_prof < 0 ? color.new(color.red, 20) : color.gray)
+    ltf_str = f_tf(timeframe.period)
+    htf_str = f_tf(htf_res)
+    htf_tag = not useHTF ? "[OFF]" : (htf_trend == 1 ? "[Bull]" : (htf_trend == -1 ? "[Bear]" : "[-]"))
+    if useHTF and invertHTF
+        htf_tag += "(Inv)"
+    htf_col = not useHTF ? color.gray : (htf_trend == 1 ? color.new(color.green, 20) : (htf_trend == -1 ? color.new(color.red, 20) : color.gray))
+    table.cell(hud, 0, 0, "LTF " + ltf_str + " • HTF " + htf_str + " " + htf_tag, text_color=htf_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 1, atr_text, text_color=atr_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 2, adaptive_text, text_color=adaptive_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 3, "L10 Long: " + str.tostring(l_w) + "W/" + str.tostring(l_count-l_w) + "L (" + (l_prof >= 0 ? "+" : "") + str.tostring(l_prof, "#.##") + "$)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 4, "L10 Short: " + str.tostring(s_w) + "W/" + str.tostring(s_count-s_w) + "L (" + (s_prof >= 0 ? "+" : "") + str.tostring(s_prof, "#.##") + "$)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 5, "SUMA (L+S): " + total_prof_str + " [" + total_pct_str + "]", text_color=total_col, text_size=size.tiny, text_halign=text.align_right)
+    
+    if showDebugPanel
+        color f_g = color.new(color.green, 50)
+        color f_r = color.new(color.red, 50)
+        table.cell(hud, 0, 6, "Imp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 1, 6, "●", text_color=recentImpulse?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 2, 6, "SwL", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 3, 6, "●", text_color=hasBullishSweep?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 4, 6, "SwS", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 5, 6, "●", text_color=hasBearishSweep?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 6, 6, "Chp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 7, 6, "●", text_color=not condChopAct?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 8, 6, "ATR", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 9, 6, "●", text_color=condAtrAct?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+    else
+        for j = 0 to 10
+            table.cell(hud, j, 6, "", text_color=color(na))
