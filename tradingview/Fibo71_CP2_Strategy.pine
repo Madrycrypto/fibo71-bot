@@ -84,38 +84,42 @@ controlMode = input.string("PRESET", "Tryb kontroli",
 preset = input.string("AUTO", "Preset rynku", 
      options=["AUTO", "CRYPTO", "FOREX", "GOLD", "INDICES"], group=G_BOT_RISK)
 
-// ===== CUSTOM EP =====
-c_ep1Min = input.float(0.32, "CUSTOM EP1 Min", step=0.01, group=G_BOT_RISK)
-c_ep1Max = input.float(0.38, "CUSTOM EP1 Max", step=0.01, group=G_BOT_RISK)
-c_ep2Min = input.float(0.62, "CUSTOM EP2 Min", step=0.01, group=G_BOT_RISK)
-c_ep2Max = input.float(0.79, "CUSTOM EP2 Max", step=0.01, group=G_BOT_RISK)
+// ===== CUSTOM EP (tylko gdy Tryb = CUSTOM lub HYBRID) =====
+c_ep1Min = input.float(0.32, "EP1 Min [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
+c_ep1Max = input.float(0.38, "EP1 Max [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
+c_ep2Min = input.float(0.62, "EP2 Min [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
+c_ep2Max = input.float(0.79, "EP2 Max [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
 
 G_BOT_FILT = "🤖 [2.B] BOT - PRO FILTRY TRANZAKCJI"
 
 useMarketIfMissed = input.bool(true, "Market entry jeśli brak retrace", group=G_BOT_RISK)
-minRR = input.float(1.5, "Minimal RR", group=G_BOT_FILT)
+minRR = input.float(1.5, "RR Target (mnożnik ryzyka)", group=G_BOT_RISK)
 
 // ===== CUSTOM ATR =====
 c_atrMult = input.float(1.5, "CUSTOM ATR Mult", step=0.1, group=G_BOT_FILT)
 c_atrLen  = input.int(14, "CUSTOM ATR Len", group=G_BOT_FILT)
 
 // ===== SESSION =====
-useCustomSession = input.bool(false, "CUSTOM Session", group=G_BOT_FILT)
-sessStart = input.int(7, "Session Start", group=G_BOT_FILT)
-sessEnd   = input.int(17, "Session End", group=G_BOT_FILT)
-customSessionOK = hour >= sessStart and hour <= sessEnd
+useSessionFilter = input.bool(true, "Filtr Sesji", group=G_BOT_FILT)
+sessAsian  = input.bool(false, "Asian (00-08 CET)", group=G_BOT_FILT)
+sessLondon = input.bool(true, "London (08-16 CET)", group=G_BOT_FILT)
+sessNY     = input.bool(true, "New York (14-22 CET)", group=G_BOT_FILT)
 
 triggerSource = input.string("Swing BOS", title="Sygnał główny z LuxAlgo do Wejścia (Trigger)", options=["Swing BOS", "Swing CHoCH", "Swing All", "Internal BOS", "Internal CHoCH", "Internal All"], group=G_BOT_RISK)
 riskPercent = input.float(1.0, title="Ryzyko Całkowite (%) - Dzieli się 50/50 jeśli EP2", step=0.1, group=G_BOT_RISK)
-actualRisk = riskPercent
-ep1Min = input.float(0.32, title="EP1 Start", step=0.01, group=G_BOT_RISK)
-ep1Max = input.float(0.38, title="EP1 Koniec", step=0.01, group=G_BOT_RISK)
+var float actualRisk = riskPercent
+// ===== DYNAMIC RISK =====
+useDynamicRisk = input.bool(true, title="Dynamic Risk (skaluj po ★)", group=G_BOT_RISK)
+riskScale5 = input.float(1.5, title="- 5★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
+riskScale4 = input.float(1.2, title="- 4★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
+riskScale3 = input.float(1.0, title="- 3★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
+riskScale2 = input.float(0.5, title="- 2★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
+// ===== DYNAMIC TP =====
+useDynamicTP = input.bool(true, title="Dynamic TP (structure target dla 5★)", group=G_BOT_RISK)
 useEP2 = input.bool(true, title="Aktywuj drugą strefę EP2", group=G_BOT_RISK)
-ep2Min = input.float(0.62, title="EP2 Start", step=0.01, group=G_BOT_RISK)
-ep2Max = input.float(0.79, title="EP2 Koniec", step=0.01, group=G_BOT_RISK)
 cancelEp2Opposite = input.bool(true, title="Anuluj zawieszone EP2 przy przeciwnym impulsie", group=G_BOT_RISK)
 slOffsetPips = input.float(2.0, title="Stop Loss Offset (Pipsy)", step=0.5, group=G_BOT_RISK)
-tpMode = input.string("100% na TP", title="Zasada Take Profit", options=["100% na TP", "70% TP1 / 30% Runner"], group=G_BOT_RISK)
+tpMode = input.string("100% na TP", title="Zasada Take Profit", options=["100% na TP", "RR Target", "70% TP1 / 30% Runner"], group=G_BOT_RISK)
 trailSLBox = input.bool(true, title="Ruchomy Fibo (SL i cała siatka podąża z ceną)", group=G_BOT_RISK)
 useDateFilter = input.bool(true, title="Ogranicz tranzakcje (Wymóg limitu krypto/walut 3k)", group=G_BOT_RISK)
 maxBarsBack = input.int(5000, title="Zezwalaj na wejścia tylko z ost. X świec", minval=500, maxval=30000, group=G_BOT_RISK)
@@ -133,8 +137,16 @@ useTimeStop = input.bool(true, title="Follow-Through (Wyjście z konsoli na plus
 ftBars = input.int(8, title="- Max świec oczekiwania", group=G_BOT_FILT)
 ftMinMove = input.float(0.1, title="- Min ruch ratujący przed wyjściem (%)", step=0.02, group=G_BOT_FILT)
 useOnePerStruct = input.bool(true, title="Max 1 Trade na strukturę", group=G_BOT_FILT)
+signalExpiryBars = input.int(10, title="Wygasanie sygnału (świece)", minval=1, group=G_BOT_FILT)
 useBE = input.bool(true, title="Break-Even po nowym kierunku", group=G_BOT_FILT)
 adaptiveOption = input.string("AUTO", title="Tryb Adaptive Mode", options=["OFF", "TREND_ONLY", "COUNTER_TREND", "AUTO"], group=G_BOT_FILT)
+// ===== SCORING SYSTEM =====
+useScoring = input.bool(true, title="System Oceny Setupów (1-5 ★)", group=G_BOT_FILT)
+minScoreStars = input.int(3, title="- Min gwiazdki do wejścia", minval=1, maxval=5, group=G_BOT_FILT)
+showScoreLabels = input.bool(true, title="- Pokaż gwiazdki na chart", group=G_BOT_FILT)
+// ===== VOLATILITY REGIME =====
+useRegime = input.bool(true, title="Volatility Regime (ADX auto-switch)", group=G_BOT_FILT)
+adxLen = input.int(14, title="- ADX Długość", group=G_BOT_FILT)
 useHTF = input.bool(false, title="Wymagaj Zgodności z HTF", group="🤖 [2.C] BOT - HTF Bias")
 invertHTF = input.bool(false, title="Odwróć Zgodność HTF (Graj kontrę)", group="🤖 [2.C] BOT - HTF Bias")
 htf_res_input = input.string("Auto", title="Interwał HTF", group="🤖 [2.C] BOT - HTF Bias", options=["Auto", "15", "60", "240", "D"])
@@ -152,7 +164,8 @@ atrSmooth = input.int(50, title="- Uśrednienie ATR", group=G_BOT_FILT)
 atrThresholdMult = input.float(1.0, title="- Mnożnik progu", step=0.1, group=G_BOT_FILT)
 webhookToken = input.string("token", title="Token Webhook", group="Webhook")
 showDebugPanel = input.bool(true, title="Pokaż wskaźniki Debug Panel w HUD", group="Wizualizacja")
-sessionOK = not useCustomSession or customSessionOK
+sessionOK = not useSessionFilter or ((sessAsian and hour >= 0 and hour < 8) or (sessLondon and hour >= 8 and hour < 16) or (sessNY and hour >= 14 and hour < 22))
+inKillZone = (hour >= 8 and hour < 10) or (hour >= 14 and hour < 16)
 //=====================================================================================================================
 // LUXALGO ENGINE (TYPES & VARIABLES)
 //=====================================================================================================================
@@ -468,7 +481,7 @@ f_htf_trend(len) =>
     if ta.crossunder(close, t_lastPL)
         t_trend := -1 
     t_trend
-htf_trend = request.security(syminfo.tickerid, htf_res, f_htf_trend(10), lookahead=barmerge.lookahead_on)
+htf_trend = request.security(syminfo.tickerid, htf_res, f_htf_trend(10)[1], lookahead=barmerge.lookahead_off)
 reqHtfBull = invertHTF ? -1 : 1
 reqHtfBear = invertHTF ? 1 : -1
 // FILTRY BOT'A
@@ -481,6 +494,11 @@ avgBody = ta.sma(bodySize, 10)
 condImpulseAct = bodySize > (avgBody * impulseMultiplier)
 recentImpulse = ta.highest(condImpulseAct ? 1 : 0, 3) > 0
 isDisplacement = not useDisplacement or recentImpulse
+// ===== VOLATILITY REGIME (ADX) =====
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+isTrending = not useRegime or adxVal > 25
+isRanging = useRegime and adxVal < 20
+string regime = not useRegime ? "OFF" : adxVal > 25 ? "TREND" : adxVal < 20 ? "RANGE" : "NEUTRAL"
 // MAPOWANIE TRIGGERÓW STRUCTURY LUXALGO:
 bullSignal = triggerSource == "Swing BOS" ? currentAlerts.swingBullishBOS : triggerSource == "Swing CHoCH" ? currentAlerts.swingBullishCHoCH : triggerSource == "Swing All" ? (currentAlerts.swingBullishBOS or currentAlerts.swingBullishCHoCH) : triggerSource == "Internal BOS" ? currentAlerts.internalBullishBOS : triggerSource == "Internal CHoCH" ? currentAlerts.internalBullishCHoCH : (currentAlerts.internalBullishBOS or currentAlerts.internalBullishCHoCH)
 bearSignal = triggerSource == "Swing BOS" ? currentAlerts.swingBearishBOS : triggerSource == "Swing CHoCH" ? currentAlerts.swingBearishCHoCH : triggerSource == "Swing All" ? (currentAlerts.swingBearishBOS or currentAlerts.swingBearishCHoCH) : triggerSource == "Internal BOS" ? currentAlerts.internalBearishBOS : triggerSource == "Internal CHoCH" ? currentAlerts.internalBearishCHoCH : (currentAlerts.internalBearishBOS or currentAlerts.internalBearishCHoCH)
@@ -531,8 +549,19 @@ isChop = useAntiChop and condChopAct
 bool isAdaptiveBullish = adaptiveOption == "OFF" or adaptiveBias >= 0
 bool isAdaptiveBearish = adaptiveOption == "OFF" or adaptiveBias <= 0
 bool isWithinDate = not useDateFilter or (bar_index >= (last_bar_index - maxBarsBack))
-triggerBullishMove = sessionOK and isWithinDate and (not useHTF or htf_trend == reqHtfBull) and bullSignal and not isChop and isAdaptiveBullish and isExpansion and isDisplacement
-triggerBearishMove = sessionOK and isWithinDate and (not useHTF or htf_trend == reqHtfBear) and bearSignal and not isChop and isAdaptiveBearish and isExpansion and isDisplacement
+// ===== SCORING SYSTEM (0-9 pkt → 1-5 ★) =====
+// Score base (6 factors + kill zone + trend regime = 8, OB added later = 9)
+scoreBull_raw = (hasBullishSweep ? 1 : 0) + (recentImpulse ? 1 : 0) + ((not useHTF or htf_trend == reqHtfBull) ? 1 : 0) + (condAtrAct ? 1 : 0) + (not condChopAct ? 1 : 0) + (isAdaptiveBullish ? 1 : 0) + (inKillZone ? 1 : 0) + (isTrending ? 1 : 0)
+scoreBear_raw = (hasBearishSweep ? 1 : 0) + (recentImpulse ? 1 : 0) + ((not useHTF or htf_trend == reqHtfBear) ? 1 : 0) + (condAtrAct ? 1 : 0) + (not condChopAct ? 1 : 0) + (isAdaptiveBearish ? 1 : 0) + (inKillZone ? 1 : 0) + (isTrending ? 1 : 0)
+int scoreBull = scoreBull_raw
+int starsBull = scoreBull >= 8 ? 5 : scoreBull >= 6 ? 4 : scoreBull >= 4 ? 3 : scoreBull == 3 ? 2 : 1
+int scoreBear = scoreBear_raw
+int starsBear = scoreBear >= 8 ? 5 : scoreBear >= 6 ? 4 : scoreBear >= 4 ? 3 : scoreBear == 3 ? 2 : 1
+// ===== TRIGGER COMPOSITION =====
+scorePassBull = not useScoring or (starsBull >= minScoreStars)
+scorePassBear = not useScoring or (starsBear >= minScoreStars)
+triggerBullishMove = sessionOK and isWithinDate and bullSignal and (useScoring ? scorePassBull : (not isChop and isAdaptiveBullish and isExpansion and isDisplacement))
+triggerBearishMove = sessionOK and isWithinDate and bearSignal and (useScoring ? scorePassBear : (not isChop and isAdaptiveBearish and isExpansion and isDisplacement))
 // POZYSKIWANIE DOŁKÓW STRUKTURY LUXALGO:
 isInternalTrigger = triggerSource == "Internal BOS" or triggerSource == "Internal CHoCH" or triggerSource == "Internal All"
 startFib_Long = isInternalTrigger ? internalLow.currentLevel  : swingLow.currentLevel
@@ -545,29 +574,35 @@ if strategy.position_size < 0
     traded_fib_short := startFib_Short
 bool freshLongStruct = not useOnePerStruct or (na(traded_fib_long) or traded_fib_long != startFib_Long)
 bool freshShortStruct = not useOnePerStruct or (na(traded_fib_short) or traded_fib_short != startFib_Short)
-var float fib100 = na  
-var float fib0 = na    
+var float fib100 = na
+var float fib0 = na
+var float origTP_long = na
+var float origTP_short = na
+var int setupBarLong = na
+var int setupBarShort = na
 var bool  isLongSetup = false
 var bool  isShortSetup = false
 if triggerBullishMove and (not reqSweep or hasBullishSweep) and freshLongStruct
-    if strategy.position_size == 0 
-        fib100 := startFib_Long 
-        fib0 := high    
+    if strategy.position_size == 0
+        fib100 := startFib_Long
+        fib0 := high
+        origTP_long := high
         isLongSetup := true
         isShortSetup := false
-        hasBullishSweep := false 
+        hasBullishSweep := false
 if triggerBearishMove and (not reqSweep or hasBearishSweep) and freshShortStruct
     if strategy.position_size == 0
-        fib100 := startFib_Short 
-        fib0 := low     
+        fib100 := startFib_Short
+        fib0 := low
+        origTP_short := low
         isShortSetup := true
         isLongSetup := false
-        hasBearishSweep := false 
+        hasBearishSweep := false
 // ===== AUTO PRESET ENGINE =====
-float p_ep1Min = ep1Min
-float p_ep1Max = ep1Max
-float p_ep2Min = ep2Min
-float p_ep2Max = ep2Max
+float p_ep1Min = 0.32
+float p_ep1Max = 0.38
+float p_ep2Min = 0.62
+float p_ep2Max = 0.79
 float p_atrMult = 1.5
 int   p_atrLen  = 14
 
@@ -617,6 +652,41 @@ if isShortSetup and strategy.position_size == 0
         if trailSLBox
             fib100 := fib100 - (fib0 - low)
         fib0 := low
+// ===== OB CONFLUENCE + FINAL SCORE =====
+bool obBull = false
+bool obBear = false
+if isLongSetup and not na(fib0) and not na(fib100) and showInternalOrderBlocksInput
+    ep1Level = fib0 - (fib0 - fib100) * 0.35
+    for eachOB in internalOrderBlocks
+        if eachOB.bias == BULLISH and ep1Level >= eachOB.barLow and ep1Level <= eachOB.barHigh
+            obBull := true
+if isShortSetup and not na(fib0) and not na(fib100) and showInternalOrderBlocksInput
+    ep1Level = fib0 + (fib100 - fib0) * 0.35
+    for eachOB in internalOrderBlocks
+        if eachOB.bias == BEARISH and ep1Level >= eachOB.barLow and ep1Level <= eachOB.barHigh
+            obBear := true
+scoreBull += (obBull ? 1 : 0)
+starsBull := scoreBull >= 8 ? 5 : scoreBull >= 6 ? 4 : scoreBull >= 4 ? 3 : scoreBull == 3 ? 2 : 1
+scoreBear += (obBear ? 1 : 0)
+starsBear := scoreBear >= 8 ? 5 : scoreBear >= 6 ? 4 : scoreBear >= 4 ? 3 : scoreBear == 3 ? 2 : 1
+// ===== SCORE LABELS ON CHART =====
+var label scoreLabelBull = na
+var label scoreLabelBear = na
+if showScoreLabels and useScoring
+    if isLongSetup and not na(fib0)
+        label.delete(scoreLabelBull)
+        starStr = starsBull >= 5 ? "★★★★★" : starsBull == 4 ? "★★★★☆" : starsBull == 3 ? "★★★☆☆" : starsBull == 2 ? "★★☆☆☆" : "★☆☆☆☆"
+        starCol = starsBull >= 4 ? color.green : starsBull == 3 ? color.orange : color.red
+        scoreLabelBull := label.new(bar_index, fib0, starStr + " " + str.tostring(scoreBull) + "/7", style=label.style_label_down, color=color.new(starCol, 60), textcolor=starCol, size=size.small)
+    if isShortSetup and not na(fib0)
+        label.delete(scoreLabelBear)
+        starStr = starsBear >= 5 ? "★★★★★" : starsBear == 4 ? "★★★★☆" : starsBear == 3 ? "★★★☆☆" : starsBear == 2 ? "★★☆☆☆" : "★☆☆☆☆"
+        starCol = starsBear >= 4 ? color.green : starsBear == 3 ? color.orange : color.red
+        scoreLabelBear := label.new(bar_index, fib0, starStr + " " + str.tostring(scoreBear) + "/7", style=label.style_label_up, color=color.new(starCol, 60), textcolor=starCol, size=size.small)
+    if not isLongSetup
+        label.delete(scoreLabelBull)
+    if not isShortSetup
+        label.delete(scoreLabelBear)
 sym = syminfo.tickerid
 isForex = syminfo.type == "forex" or syminfo.type == "cfd"
 isCrypto = syminfo.type == "crypto"
@@ -624,9 +694,11 @@ pip_mult = isForex ? 10 : (isCrypto ? 100 : 1)
 slDistance = slOffsetPips * pip_mult * syminfo.mintick
 var float activeSL = na
 var float activeTP = na
+var float origSL = na
 var bool isLongBE = false
 var bool isShortBE = false
 bool tpModeB = tpMode == "70% TP1 / 30% Runner"
+bool tpModeRR = tpMode == "RR Target"
 var float ep1MinDraw = na
 var float ep1MaxDraw = na
 var float ep2MinDraw = na
@@ -664,6 +736,15 @@ if controlMode == "HYBRID"
     f_atrMult := na(c_atrMult) ? p_atrMult : c_atrMult
     f_atrLen := na(c_atrLen) ? p_atrLen : c_atrLen
 
+// ===== REGIME AUTO-SWITCH =====
+if useRegime
+    if regime == "TREND"
+        f_ep1Min := f_ep1Min * 0.9
+        f_ep1Max := f_ep1Max * 1.1
+    if regime == "RANGE"
+        f_ep1Min := f_ep1Min * 1.1
+        f_ep1Max := f_ep1Max * 0.9
+
 visualp1Min = isValidDraw ? ep1MinDraw : na
 visualp1Max = isValidDraw ? ep1MaxDraw : na
 visualp2Min = isValidDraw ? ep2MinDraw : na
@@ -681,6 +762,10 @@ calcQty(entryPrice, stopLossPrice, riskFactor) =>
     dist = math.abs(entryPrice - stopLossPrice)
     qty = dist > 0 ? (riskAmount / dist) : 0
     qty
+// ===== DYNAMIC RISK CALCULATION =====
+activeStarsRisk = isLongSetup ? starsBull : isShortSetup ? starsBear : 0
+dynMult = not useDynamicRisk ? 1.0 : activeStarsRisk >= 5 ? riskScale5 : activeStarsRisk == 4 ? riskScale4 : activeStarsRisk == 3 ? riskScale3 : riskScale2
+actualRisk := riskPercent * dynMult
 if cancelEp2Opposite
     if strategy.position_size == 0
         if isLongSetup and anyBearCHoCH
@@ -695,84 +780,80 @@ if cancelEp2Opposite
         if isShortSetup and anyBullCHoCH
             strategy.cancel("EP2 S")
 if isLongSetup
-    longSL = fib100 - slDistance  
-    longTP = fib0    
-    
-    EP1_limit = fib0 - (fib0 - fib100) * f_ep1Min  
+    longSL = fib100 - slDistance
+    longTP = fib0
+
+    EP1_limit = fib0 - (fib0 - fib100) * f_ep1Min
     EP1_max   = fib0 - (fib0 - fib100) * f_ep1Max
     EP2_limit = useEP2 ? (fib0 - (fib0 - fib100) * f_ep2Min) : na
     EP2_max   = useEP2 ? (fib0 - (fib0 - fib100) * f_ep2Max) : na
-    var float rr_long = na
-    rr_long := (longTP - EP1_limit) / (EP1_limit - longSL)
+    rr_ep1 = (longTP - EP1_limit) / (EP1_limit - longSL)
+    rr_ep2 = useEP2 ? (longTP - EP2_limit) / (EP2_limit - longSL) : na
+    rr_long := useEP2 ? rr_ep2 : rr_ep1
 
-    if rr_long >= minRR
-        ep1MinDraw := EP1_limit
-        ep1MaxDraw := EP1_max
-        ep2MinDraw := EP2_limit
-        ep2MaxDraw := EP2_max
-        
-        if low < longSL 
+    ep1MinDraw := EP1_limit
+    ep1MaxDraw := EP1_max
+    ep2MinDraw := EP2_limit
+    ep2MaxDraw := EP2_max
+
+    if strategy.position_size == 0
+        if low < longSL or high > origTP_long
             isLongSetup := false
             strategy.cancel_all()
         else
             float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
             float riskAlloc_EP2 = actualRisk / 2.0
 
-            qty1 = calcQty(EP1_limit, longSL, riskAlloc_EP1)
             activeSL := longSL
-            activeTP := longTP
-            
-            strategy.entry("EP1 L", strategy.long, qty=qty1, limit=EP1_limit)
-            
+            origSL := longSL
+            activeTP := tpModeRR ? EP1_limit + (EP1_limit - longSL) * minRR : (useDynamicTP and starsBull >= 5 and not na(trailing.top) and trailing.top > longTP ? trailing.top : longTP)
+
+            string msgBuy = '{"signal":"buy","pair":"' + syminfo.ticker + '","entry":' + str.tostring(EP1_limit, "#.##") + ',"stopLoss":' + str.tostring(longSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBull) + '}'
+
+            qty1 = calcQty(EP1_limit, longSL, riskAlloc_EP1)
+            strategy.entry("EP1 L", strategy.long, qty=qty1, limit=EP1_limit, alert_message=msgBuy)
+
             if useEP2
                 qty2 = calcQty(EP2_limit, longSL, riskAlloc_EP2)
-                strategy.entry("EP2 L", strategy.long, qty=qty2, limit=EP2_limit)
-
-            if high > longTP
-                isLongSetup := false
-                strategy.cancel("EP2 L")
-    else
-        isLongSetup := false
+                strategy.entry("EP2 L", strategy.long, qty=qty2, limit=EP2_limit, alert_message=msgBuy)
 
 if isShortSetup
-    shortSL = fib100 + slDistance 
-    shortTP = fib0   
-    
+    shortSL = fib100 + slDistance
+    shortTP = fib0
+
     EP1_limit = fib0 + (fib100 - fib0) * f_ep1Min
     EP1_max   = fib0 + (fib100 - fib0) * f_ep1Max
     EP2_limit = useEP2 ? (fib0 + (fib100 - fib0) * f_ep2Min) : na
     EP2_max   = useEP2 ? (fib0 + (fib100 - fib0) * f_ep2Max) : na
-    var float rr_short = na
-    rr_short := (EP1_limit - shortTP) / (shortSL - EP1_limit)
+    rr_ep1_s = (EP1_limit - shortTP) / (shortSL - EP1_limit)
+    rr_ep2_s = useEP2 ? (EP2_limit - shortTP) / (shortSL - EP2_limit) : na
+    rr_short := useEP2 ? rr_ep2_s : rr_ep1_s
 
-    if rr_short >= minRR
-        ep1MinDraw := EP1_limit
-        ep1MaxDraw := EP1_max
-        ep2MinDraw := EP2_limit
-        ep2MaxDraw := EP2_max
-        
-        if high > shortSL
+    ep1MinDraw := EP1_limit
+    ep1MaxDraw := EP1_max
+    ep2MinDraw := EP2_limit
+    ep2MaxDraw := EP2_max
+
+    if strategy.position_size == 0
+        if high > shortSL or low < origTP_short
             isShortSetup := false
             strategy.cancel_all()
         else
             float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
             float riskAlloc_EP2 = actualRisk / 2.0
 
-            qty1 = calcQty(EP1_limit, shortSL, riskAlloc_EP1)
             activeSL := shortSL
-            activeTP := shortTP
-            
-            strategy.entry("EP1 S", strategy.short, qty=qty1, limit=EP1_limit)
-            
+            origSL := shortSL
+            activeTP := tpModeRR ? EP1_limit - (shortSL - EP1_limit) * minRR : (useDynamicTP and starsBear >= 5 and not na(trailing.bottom) and trailing.bottom < shortTP ? trailing.bottom : shortTP)
+
+            string msgSell = '{"signal":"sell","pair":"' + syminfo.ticker + '","entry":' + str.tostring(EP1_limit, "#.##") + ',"stopLoss":' + str.tostring(shortSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBear) + '}'
+
+            qty1 = calcQty(EP1_limit, shortSL, riskAlloc_EP1)
+            strategy.entry("EP1 S", strategy.short, qty=qty1, limit=EP1_limit, alert_message=msgSell)
+
             if useEP2
                 qty2 = calcQty(EP2_limit, shortSL, riskAlloc_EP2)
-                strategy.entry("EP2 S", strategy.short, qty=qty2, limit=EP2_limit)
-
-            if low < shortTP
-                isShortSetup := false
-                strategy.cancel("EP2 S")
-    else
-        isShortSetup := false
+                strategy.entry("EP2 S", strategy.short, qty=qty2, limit=EP2_limit, alert_message=msgSell)
 
 // ==========================
 // 🔥 PRO EXIT ENGINE (ATR TRAIL + TRUE 100%)
@@ -791,8 +872,8 @@ trail = atr_val * f_atrMult
 var bool tp1_hit_long = false
 var bool tp1_hit_short = false
 
-msgExitLong  = '{"token": "' + webhookToken + '", "action": "EXIT_LONG", "symbol": "' + sym + '"}'
-msgExitShort = '{"token": "' + webhookToken + '", "action": "EXIT_SHORT", "symbol": "' + sym + '"}'
+msgExitLong  = '{"signal":"exit_buy","pair":"' + syminfo.ticker + '","action":"EXIT_LONG","symbol":"' + sym + '"}'
+msgExitShort = '{"signal":"exit_sell","pair":"' + syminfo.ticker + '","action":"EXIT_SHORT","symbol":"' + sym + '"}'
 
 
 // ==========================
@@ -805,13 +886,25 @@ if strategy.position_size > 0
         tp1_hit_long := true
 
     // ===== SMART BREAK EVEN =====
-beTrigger = strategy.position_avg_price * 1.002  // 0.2%
+    beTrigger = strategy.position_avg_price * 1.002  // 0.2%
+    if useBE and not isLongBE and close > beTrigger
+        activeSL := strategy.position_avg_price
+        isLongBE := true
 
-if useBE and not isLongBE and close > beTrigger
-    activeSL := strategy.position_avg_price
-    isLongBE := true
+    if tpModeRR
+        // ===== RR TARGET =====
+        float rrTP = strategy.position_avg_price + (strategy.position_avg_price - origSL) * minRR
+        strategy.exit("RR EP1", from_entry="EP1 L", limit=rrTP, stop=activeSL)
+        if useEP2
+            strategy.exit("RR EP2", from_entry="EP2 L", limit=rrTP, stop=activeSL)
 
-    if tpModeB
+        // reverse zamyka
+        if bearSignal
+            strategy.close("EP1 L")
+            if useEP2
+                strategy.close("EP2 L")
+
+    else if tpModeB
         // ===== TP1 =====
         strategy.exit("TP1 EP1", from_entry="EP1 L", qty_percent=70, limit=activeTP)
         if useEP2
@@ -836,9 +929,15 @@ if useBE and not isLongBE and close > beTrigger
         if useEP2
             strategy.exit("FULL EP2", from_entry="EP2 L", limit=activeTP, stop=activeSL)
 
+        // reverse zamyka
+        if bearSignal
+            strategy.close("EP1 L")
+            if useEP2
+                strategy.close("EP2 L")
+
 // ===== MARKET ENTRY FALLBACK =====
-if useMarketIfMissed and isLongSetup and strategy.position_size == 0 and close > fib0 and rr_long >= minRR
-    strategy.entry("MKT L", strategy.long)
+if useMarketIfMissed and isLongSetup and strategy.position_size == 0 and close > origTP_long
+    strategy.entry("MKT L", strategy.long, alert_message='{"signal":"buy","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(activeSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + '}')
     isLongSetup := false
 
 // ==========================
@@ -849,13 +948,27 @@ if strategy.position_size < 0
     if not tp1_hit_short and low <= activeTP
         tp1_hit_short := true
 
+    // ===== SMART BREAK EVEN =====
     beTriggerShort = strategy.position_avg_price * 0.998
 
     if useBE and not isShortBE and close < beTriggerShort
         activeSL := strategy.position_avg_price
         isShortBE := true
 
-    if tpModeB
+    if tpModeRR
+        // ===== RR TARGET =====
+        float rrTP = strategy.position_avg_price - (origSL - strategy.position_avg_price) * minRR
+        strategy.exit("RR EP1", from_entry="EP1 S", limit=rrTP, stop=activeSL)
+        if useEP2
+            strategy.exit("RR EP2", from_entry="EP2 S", limit=rrTP, stop=activeSL)
+
+        // reverse zamyka
+        if bullSignal
+            strategy.close("EP1 S")
+            if useEP2
+                strategy.close("EP2 S")
+
+    else if tpModeB
         // ===== TP1 =====
         strategy.exit("TP1 EP1", from_entry="EP1 S", qty_percent=70, limit=activeTP)
         if useEP2
@@ -879,8 +992,14 @@ if strategy.position_size < 0
         if useEP2
             strategy.exit("FULL EP2", from_entry="EP2 S", limit=activeTP, stop=activeSL)
 
-if useMarketIfMissed and isShortSetup and strategy.position_size == 0 and close < fib0 and rr_long >= minRR
-    strategy.entry("MKT S", strategy.short)
+        // reverse zamyka
+        if bullSignal
+            strategy.close("EP1 S")
+            if useEP2
+                strategy.close("EP2 S")
+
+if useMarketIfMissed and isShortSetup and strategy.position_size == 0 and close < origTP_short
+    strategy.entry("MKT S", strategy.short, alert_message='{"signal":"sell","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(activeSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + '}')
     isShortSetup := false
 
 // ==========================
@@ -889,8 +1008,15 @@ if useMarketIfMissed and isShortSetup and strategy.position_size == 0 and close 
 if strategy.position_size == 0 and strategy.position_size[1] != 0
     isLongSetup := false
     isShortSetup := false
-    isLongBE := false 
-    isShortBE := false 
+    isLongBE := false
+    isShortBE := false
+    tp1_hit_long := false
+    tp1_hit_short := false
+    activeSL := na
+    activeTP := na
+    origSL := na
+    origTP_long := na
+    origTP_short := na
     strategy.cancel_all()
 bars_held = strategy.opentrades > 0 ? (bar_index - strategy.opentrades.entry_bar_index(0)) : 0
 if useTimeStop and strategy.position_size > 0 and bars_held >= ftBars
@@ -903,9 +1029,9 @@ if useTimeStop and strategy.position_size < 0 and bars_held >= ftBars
         strategy.close_all(comment="Time Stop", alert_message=msgExitShort)
 f_tf(tf) =>
     tf == "1" ? "1m" : tf == "3" ? "3m" : tf == "5" ? "5m" : tf == "15" ? "15m" : tf == "30" ? "30m" : tf == "45" ? "45m" : tf == "60" ? "1h" : tf == "120" ? "2h" : tf == "240" ? "4h" : tf == "D" or tf == "1D" ? "1d" : tf == "W" or tf == "1W" ? "1w" : tf
-var table hud = table.new(position.top_right, 11, 7, bgcolor=color.new(color.black, 100)) 
+var table hud = table.new(position.top_right, 11, 9, bgcolor=color.new(color.black, 100))
 if barstate.isfirst
-    for i = 0 to 5
+    for i = 0 to 7
         table.merge_cells(hud, 0, i, 10, i)
 if barstate.islast
     int l_count = 0
@@ -957,26 +1083,49 @@ if barstate.islast
     if useHTF and invertHTF
         htf_tag += "(Inv)"
     htf_col = not useHTF ? color.gray : (htf_trend == 1 ? color.new(color.green, 20) : (htf_trend == -1 ? color.new(color.red, 20) : color.gray))
-    table.cell(hud, 0, 0, "LTF " + ltf_str + " • HTF " + htf_str + " " + htf_tag, text_color=htf_col, text_size=size.tiny, text_halign=text.align_right)
-    table.cell(hud, 0, 1, atr_text, text_color=atr_col, text_size=size.tiny, text_halign=text.align_right)
-    table.cell(hud, 0, 2, adaptive_text, text_color=adaptive_col, text_size=size.tiny, text_halign=text.align_right)
-    table.cell(hud, 0, 3, "L10 Long: " + str.tostring(l_w) + "W/" + str.tostring(l_count-l_w) + "L (" + (l_prof >= 0 ? "+" : "") + str.tostring(l_prof, "#.##") + "$)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-    table.cell(hud, 0, 4, "L10 Short: " + str.tostring(s_w) + "W/" + str.tostring(s_count-s_w) + "L (" + (s_prof >= 0 ? "+" : "") + str.tostring(s_prof, "#.##") + "$)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-    table.cell(hud, 0, 5, "SUMA (L+S): " + total_prof_str + " [" + total_pct_str + "]", text_color=total_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 0, "PRESET: " + finalPreset + " [" + controlMode + "] EP1:" + str.tostring(f_ep1Min,"#.##") + "-" + str.tostring(f_ep1Max,"#.##") + " EP2:" + str.tostring(f_ep2Min,"#.##") + "-" + str.tostring(f_ep2Max,"#.##") + " ATR×" + str.tostring(f_atrMult,"#.##"), text_color=color.new(color.aqua, 20), text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 1, "LTF " + ltf_str + " • HTF " + htf_str + " " + htf_tag, text_color=htf_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 2, atr_text, text_color=atr_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 3, adaptive_text, text_color=adaptive_col, text_size=size.tiny, text_halign=text.align_right)
+    regime_col = not useRegime ? color.gray : (regime == "TREND" ? color.new(color.green, 20) : regime == "RANGE" ? color.new(color.orange, 20) : color.gray)
+    sess_text = not useSessionFilter ? "SESJA: [OFF]" : (inKillZone ? "SESJA: KILL ZONE" : "SESJA: " + (hour >= 8 and hour < 16 ? "London" : hour >= 14 and hour < 22 ? "NY" : hour >= 0 and hour < 8 ? "Asian" : "---"))
+    table.cell(hud, 0, 4, "REGIME: " + regime + " (ADX:" + str.tostring(adxVal, "#.#") + ") | " + sess_text, text_color=regime_col, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 5, "L10 Long: " + str.tostring(l_w) + "W/" + str.tostring(l_count-l_w) + "L (" + (l_prof >= 0 ? "+" : "") + str.tostring(l_prof, "#.##") + "$)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 6, "L10 Short: " + str.tostring(s_w) + "W/" + str.tostring(s_count-s_w) + "L (" + (s_prof >= 0 ? "+" : "") + str.tostring(s_prof, "#.##") + "$)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(hud, 0, 7, "SUMA (L+S): " + total_prof_str + " [" + total_pct_str + "]", text_color=total_col, text_size=size.tiny, text_halign=text.align_right)
     
     if showDebugPanel
         color f_g = color.new(color.green, 50)
         color f_r = color.new(color.red, 50)
-        table.cell(hud, 0, 6, "Imp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-        table.cell(hud, 1, 6, "●", text_color=recentImpulse?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
-        table.cell(hud, 2, 6, "SwL", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-        table.cell(hud, 3, 6, "●", text_color=hasBullishSweep?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
-        table.cell(hud, 4, 6, "SwS", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-        table.cell(hud, 5, 6, "●", text_color=hasBearishSweep?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
-        table.cell(hud, 6, 6, "Chp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-        table.cell(hud, 7, 6, "●", text_color=not condChopAct?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
-        table.cell(hud, 8, 6, "ATR", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
-        table.cell(hud, 9, 6, "●", text_color=condAtrAct?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        int activeStars = strategy.position_size > 0 ? starsBull : strategy.position_size < 0 ? starsBear : 0
+        int activeScore = strategy.position_size > 0 ? scoreBull : strategy.position_size < 0 ? scoreBear : 0
+        color scoreCol = activeStars >= 4 ? f_g : activeStars == 3 ? color.new(color.orange, 30) : f_r
+        table.cell(hud, 0, 8, "Imp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 1, 8, "●", text_color=recentImpulse?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 2, 8, "SwL", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 3, 8, "●", text_color=hasBullishSweep?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 4, 8, "SwS", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 5, 8, "●", text_color=hasBearishSweep?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 6, 8, "Chp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 7, 8, "●", text_color=not condChopAct?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 8, 8, "ADX", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+        table.cell(hud, 9, 8, "●", text_color=isTrending?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
+        table.cell(hud, 10, 8, useScoring ? str.tostring(activeStars) + "★ " + str.tostring(activeScore) + "/9" : "Score[OFF]", text_color=useScoring ? scoreCol : color.gray, text_size=size.tiny, text_halign=text.align_right)
     else
         for j = 0 to 10
-            table.cell(hud, j, 6, "", text_color=color(na))
+            table.cell(hud, j, 8, "", text_color=color(na))
+
+//=====================================================================================================================
+// ALERTS — CORNIX + TELEGRAM
+//=====================================================================================================================
+// CORNIX: Alert na strategii → webhook → JSON z alert_message (signal/pair/entry/stopLoss/takeProfit)
+// TELEGRAM: Alert na alertcondition → webhook → czytelny tekst z {{ticker}}/{{close}} itp.
+//
+// Instrukcja:
+// 1. CORNIX: Kliknij na strategii → "Add Alert" → webhook URL z Cornix → message: {{strategy.order.alert_message}}
+// 2. TELEGRAM: Kliknij na strategii → "Add Alert" → wybierz condition poniżej → webhook URL do Telegram bota
+
+alertcondition(bullSignal, title="LONG Signal (BOS/CHoCH)", message='🟢 LONG SIGNAL\nPair: {{ticker}}\nTF: {{interval}}\nPrice: {{close}}\nTime: {{timenow}}\n\nBullish Structure Break detected')
+alertcondition(bearSignal, title="SHORT Signal (BOS/CHoCH)", message='🔴 SHORT SIGNAL\nPair: {{ticker}}\nTF: {{interval}}\nPrice: {{close}}\nTime: {{timenow}}\n\nBearish Structure Break detected')
+alertcondition(triggerBullishMove, title="LONG Setup (pelny)", message='🟢 LONG SETUP\nPair: {{ticker}}\nTF: {{interval}}\nPrice: {{close}}\nTime: {{timenow}}\n\nAll filters passed — entry pending')
+alertcondition(triggerBearishMove, title="SHORT Setup (pelny)", message='🔴 SHORT SETUP\nPair: {{ticker}}\nTF: {{interval}}\nPrice: {{close}}\nTime: {{timenow}}\n\nAll filters passed — entry pending')

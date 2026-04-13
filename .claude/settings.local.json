@@ -4,7 +4,8 @@
       "Bash(/Users/maciejmostowski/Fibo_71/venv/bin/python:*)",
       "Bash(source:*)",
       "Bash(python:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }
