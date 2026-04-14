@@ -21,6 +21,10 @@ minImbalancePips = input.float(10.0, "Min Imbalance (pips)", minval=1, group="BO
 enableImbalance = input.bool(true, "Require Imbalance", group="Filters")
 enableLiquiditySweep = input.bool(true, "Require Liquidity Sweep", group="Filters")
 
+// Setup Duration
+setupExpiryBars = input.int(500, "Setup Expiry (bars)", minval=5, maxval=5000, step=5, tooltip="Number of candles setup stays active. After this many bars, fib lines are removed and listening stops. Default 500 = almost never expires.", group="Setup Duration")
+setupExpiryEnabled = input.bool(true, "Enable Setup Expiry", group="Setup Duration")
+
 // Display Settings
 showSwingPoints = input.bool(true, "Show Swing Points", group="Display")
 showFibLines = input.bool(true, "Show Fibonacci Lines", group="Display")
@@ -199,37 +203,49 @@ while i < array.size(activeSetups)
 
     // Only check active setups (not yet hit)
     if na(s.hitBar)
-        // Check if price hit TP or SL
-        hitTP_level = s.isBullish ? (low <= s.fib0) : (high >= s.fib0)
-        hitSL_level = s.isBullish ? (high >= s.fib100) : (low <= s.fib100)
+        // Check if setup has expired (duration exceeded)
+        isExpired = setupExpiryEnabled and (bar_index - s.createdBar >= setupExpiryBars)
 
-        if hitTP_level
+        if isExpired
+            // Setup expired - delete all drawings and mark as expired
+            deleteSetupDrawings(s)
             s.hitBar := bar_index
-            s.hitTP := true
-            // Update label to show TP hit
+            s.hitTP := na  // na means expired (not TP or SL)
             if showLabels
-                label.delete(s.bosLabel)
-                hitText = s.isBullish ? "✅ TP HIT" : "✅ TP HIT"
-                lblColor = color.new(color.lime, 20)
-                s.bosLabel := label.new(bar_index, s.fib0, hitText, color=lblColor, textcolor=color.black, style=label.style_label_up, size=size.normal)
-            // Change line colors to show inactive
-            if showFibLines
-                line.set_style(s.lineFib0, line.style_solid)
-                line.set_width(s.lineFib0, 3)
+                s.bosLabel := label.new(bar_index, s.isBullish ? s.fib100 : s.fib100, "⏰ EXPIRED", color=color.new(color.gray, 30), textcolor=color.white, style=s.isBullish ? label.style_label_down : label.style_label_up, size=size.tiny)
 
-        else if hitSL_level
-            s.hitBar := bar_index
-            s.hitTP := false
-            // Update label to show SL hit
-            if showLabels
-                label.delete(s.bosLabel)
-                hitText = s.isBullish ? "⛔ SL HIT" : "⛔ SL HIT"
-                lblColor = color.new(color.red, 20)
-                s.bosLabel := label.new(bar_index, s.fib100, hitText, color=lblColor, textcolor=color.white, style=label.style_label_down, size=size.normal)
-            // Change line colors to show inactive
-            if showFibLines
-                line.set_style(s.lineFib100, line.style_solid)
-                line.set_width(s.lineFib100, 3)
+        else
+            // Check if price hit TP or SL
+            hitTP_level = s.isBullish ? (low <= s.fib0) : (high >= s.fib0)
+            hitSL_level = s.isBullish ? (high >= s.fib100) : (low <= s.fib100)
+
+            if hitTP_level
+                s.hitBar := bar_index
+                s.hitTP := true
+                // Update label to show TP hit
+                if showLabels
+                    label.delete(s.bosLabel)
+                    hitText = s.isBullish ? "✅ TP HIT" : "✅ TP HIT"
+                    lblColor = color.new(color.lime, 20)
+                    s.bosLabel := label.new(bar_index, s.fib0, hitText, color=lblColor, textcolor=color.black, style=label.style_label_up, size=size.normal)
+                // Change line colors to show inactive
+                if showFibLines
+                    line.set_style(s.lineFib0, line.style_solid)
+                    line.set_width(s.lineFib0, 3)
+
+            else if hitSL_level
+                s.hitBar := bar_index
+                s.hitTP := false
+                // Update label to show SL hit
+                if showLabels
+                    label.delete(s.bosLabel)
+                    hitText = s.isBullish ? "⛔ SL HIT" : "⛔ SL HIT"
+                    lblColor = color.new(color.red, 20)
+                    s.bosLabel := label.new(bar_index, s.fib100, hitText, color=lblColor, textcolor=color.white, style=label.style_label_down, size=size.normal)
+                // Change line colors to show inactive
+                if showFibLines
+                    line.set_style(s.lineFib100, line.style_solid)
+                    line.set_width(s.lineFib100, 3)
 
     i := i + 1
 
@@ -387,3 +403,10 @@ if barstate.islast
 
             table.cell(infoTable, 0, 5, "Active Setups", text_color=color.white)
             table.cell(infoTable, 1, 5, str.tostring(activeBullish + activeBearish) + "/" + str.tostring(maxActiveSetups), text_color=color.white)
+
+            // Show expiry countdown
+            if setupExpiryEnabled
+                barsLeft = setupExpiryBars - (bar_index - lastActive.createdBar)
+                expiryColor = barsLeft <= 5 ? color.orange : color.white
+                table.cell(infoTable, 0, 6, "Expires in", text_color=color.white)
+                table.cell(infoTable, 1, 6, str.tostring(barsLeft) + " bars", text_color=expiryColor)

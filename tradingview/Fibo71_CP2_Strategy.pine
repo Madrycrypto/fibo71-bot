@@ -137,7 +137,7 @@ useTimeStop = input.bool(true, title="Follow-Through (Wyjście z konsoli na plus
 ftBars = input.int(8, title="- Max świec oczekiwania", group=G_BOT_FILT)
 ftMinMove = input.float(0.1, title="- Min ruch ratujący przed wyjściem (%)", step=0.02, group=G_BOT_FILT)
 useOnePerStruct = input.bool(true, title="Max 1 Trade na strukturę", group=G_BOT_FILT)
-signalExpiryBars = input.int(10, title="Wygasanie sygnału (świece)", minval=1, group=G_BOT_FILT)
+signalExpiryBars = input.int(500, title="Wygasanie sygnału (świece)", minval=1, maxval=5000, group=G_BOT_FILT)
 useBE = input.bool(true, title="Break-Even po nowym kierunku", group=G_BOT_FILT)
 adaptiveOption = input.string("AUTO", title="Tryb Adaptive Mode", options=["OFF", "TREND_ONLY", "COUNTER_TREND", "AUTO"], group=G_BOT_FILT)
 // ===== SCORING SYSTEM =====
@@ -560,8 +560,8 @@ int starsBear = scoreBear >= 8 ? 5 : scoreBear >= 6 ? 4 : scoreBear >= 4 ? 3 : s
 // ===== TRIGGER COMPOSITION =====
 scorePassBull = not useScoring or (starsBull >= minScoreStars)
 scorePassBear = not useScoring or (starsBear >= minScoreStars)
-triggerBullishMove = sessionOK and isWithinDate and bullSignal and (useScoring ? scorePassBull : (not isChop and isAdaptiveBullish and isExpansion and isDisplacement))
-triggerBearishMove = sessionOK and isWithinDate and bearSignal and (useScoring ? scorePassBear : (not isChop and isAdaptiveBearish and isExpansion and isDisplacement))
+triggerBullishMove = sessionOK and isWithinDate and bullSignal and tradeLongs and (useScoring ? scorePassBull : (not isChop and isAdaptiveBullish and isExpansion and isDisplacement))
+triggerBearishMove = sessionOK and isWithinDate and bearSignal and tradeShorts and (useScoring ? scorePassBear : (not isChop and isAdaptiveBearish and isExpansion and isDisplacement))
 // POZYSKIWANIE DOŁKÓW STRUKTURY LUXALGO:
 isInternalTrigger = triggerSource == "Internal BOS" or triggerSource == "Internal CHoCH" or triggerSource == "Internal All"
 startFib_Long = isInternalTrigger ? internalLow.currentLevel  : swingLow.currentLevel
@@ -590,6 +590,7 @@ if triggerBullishMove and (not reqSweep or hasBullishSweep) and freshLongStruct
         isLongSetup := true
         isShortSetup := false
         hasBullishSweep := false
+        setupBarLong := bar_index
 if triggerBearishMove and (not reqSweep or hasBearishSweep) and freshShortStruct
     if strategy.position_size == 0
         fib100 := startFib_Short
@@ -598,6 +599,7 @@ if triggerBearishMove and (not reqSweep or hasBearishSweep) and freshShortStruct
         isShortSetup := true
         isLongSetup := false
         hasBearishSweep := false
+        setupBarShort := bar_index
 // ===== AUTO PRESET ENGINE =====
 float p_ep1Min = 0.32
 float p_ep1Max = 0.38
@@ -609,9 +611,9 @@ int   p_atrLen  = 14
 var string finalPreset = preset
 
 if preset == "AUTO"
-    finalPreset := syminfo.type == "crypto" ? "CRYPTO" :
-                   syminfo.type == "forex" ? "FOREX" :
-                   syminfo.ticker == "XAUUSD" ? "GOLD" : "INDICES"
+    finalPreset := syminfo.ticker == "XAUUSD" or syminfo.ticker == "XAUUSD*" or str.contains(str.upper(syminfo.ticker), "XAU") ? "GOLD" :
+                   syminfo.type == "crypto" ? "CRYPTO" :
+                   syminfo.type == "forex" or syminfo.type == "cfd" ? "FOREX" : "INDICES"
 
 // ===== PRESET VALUES =====
 if finalPreset == "CRYPTO"
@@ -646,12 +648,22 @@ if isLongSetup and strategy.position_size == 0
         if trailSLBox
             fib100 := fib100 + (high - fib0)
         fib0 := high
-        
+        origTP_long := high
+
 if isShortSetup and strategy.position_size == 0
     if low < fib0
         if trailSLBox
             fib100 := fib100 - (fib0 - low)
         fib0 := low
+        origTP_short := low
+
+// ===== SIGNAL EXPIRY =====
+if isLongSetup and not na(setupBarLong) and (bar_index - setupBarLong >= signalExpiryBars) and strategy.position_size == 0
+    isLongSetup := false
+    strategy.cancel_all()
+if isShortSetup and not na(setupBarShort) and (bar_index - setupBarShort >= signalExpiryBars) and strategy.position_size == 0
+    isShortSetup := false
+    strategy.cancel_all()
 // ===== OB CONFLUENCE + FINAL SCORE =====
 bool obBull = false
 bool obBear = false
@@ -677,12 +689,12 @@ if showScoreLabels and useScoring
         label.delete(scoreLabelBull)
         starStr = starsBull >= 5 ? "★★★★★" : starsBull == 4 ? "★★★★☆" : starsBull == 3 ? "★★★☆☆" : starsBull == 2 ? "★★☆☆☆" : "★☆☆☆☆"
         starCol = starsBull >= 4 ? color.green : starsBull == 3 ? color.orange : color.red
-        scoreLabelBull := label.new(bar_index, fib0, starStr + " " + str.tostring(scoreBull) + "/7", style=label.style_label_down, color=color.new(starCol, 60), textcolor=starCol, size=size.small)
+        scoreLabelBull := label.new(bar_index, fib0, starStr + " " + str.tostring(scoreBull) + "/9", style=label.style_label_down, color=color.new(starCol, 60), textcolor=starCol, size=size.small)
     if isShortSetup and not na(fib0)
         label.delete(scoreLabelBear)
         starStr = starsBear >= 5 ? "★★★★★" : starsBear == 4 ? "★★★★☆" : starsBear == 3 ? "★★★☆☆" : starsBear == 2 ? "★★☆☆☆" : "★☆☆☆☆"
         starCol = starsBear >= 4 ? color.green : starsBear == 3 ? color.orange : color.red
-        scoreLabelBear := label.new(bar_index, fib0, starStr + " " + str.tostring(scoreBear) + "/7", style=label.style_label_up, color=color.new(starCol, 60), textcolor=starCol, size=size.small)
+        scoreLabelBear := label.new(bar_index, fib0, starStr + " " + str.tostring(scoreBear) + "/9", style=label.style_label_up, color=color.new(starCol, 60), textcolor=starCol, size=size.small)
     if not isLongSetup
         label.delete(scoreLabelBull)
     if not isShortSetup
@@ -744,6 +756,12 @@ if useRegime
     if regime == "RANGE"
         f_ep1Min := f_ep1Min * 1.1
         f_ep1Max := f_ep1Max * 0.9
+    // Zabezpieczenie: strefa nie moze sie odwrocic (min zawsze < max)
+    float minGap = 0.03
+    if f_ep1Min >= f_ep1Max
+        f_ep1Min := f_ep1Max - minGap
+    if f_ep2Min >= f_ep2Max
+        f_ep2Min := f_ep2Max - minGap
 
 visualp1Min = isValidDraw ? ep1MinDraw : na
 visualp1Max = isValidDraw ? ep1MaxDraw : na
@@ -797,9 +815,20 @@ if isLongSetup
     ep2MaxDraw := EP2_max
 
     if strategy.position_size == 0
-        if low < longSL or high > origTP_long
+        if low < longSL
             isLongSetup := false
             strategy.cancel_all()
+        else if high > origTP_long
+            // Price already at/beyond TP - use market entry fallback or cancel
+            if useMarketIfMissed
+                activeSL := longSL
+                origSL := longSL
+                activeTP := tpModeRR ? EP1_limit + (EP1_limit - longSL) * minRR : (useDynamicTP and starsBull >= 5 and not na(trailing.top) and trailing.top > longTP ? trailing.top : longTP)
+                strategy.entry("EP1 L", strategy.long, alert_message='{"signal":"buy","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(longSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBull) + '}')
+                isLongSetup := false
+            else
+                isLongSetup := false
+                strategy.cancel_all()
         else
             float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
             float riskAlloc_EP2 = actualRisk / 2.0
@@ -835,9 +864,20 @@ if isShortSetup
     ep2MaxDraw := EP2_max
 
     if strategy.position_size == 0
-        if high > shortSL or low < origTP_short
+        if high > shortSL
             isShortSetup := false
             strategy.cancel_all()
+        else if low < origTP_short
+            // Price already at/beyond TP - use market entry fallback or cancel
+            if useMarketIfMissed
+                activeSL := shortSL
+                origSL := shortSL
+                activeTP := tpModeRR ? EP1_limit - (shortSL - EP1_limit) * minRR : (useDynamicTP and starsBear >= 5 and not na(trailing.bottom) and trailing.bottom < shortTP ? trailing.bottom : shortTP)
+                strategy.entry("EP1 S", strategy.short, alert_message='{"signal":"sell","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(shortSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBear) + '}')
+                isShortSetup := false
+            else
+                isShortSetup := false
+                strategy.cancel_all()
         else
             float riskAlloc_EP1 = not useEP2 ? actualRisk : (actualRisk / 2.0)
             float riskAlloc_EP2 = actualRisk / 2.0
@@ -865,8 +905,8 @@ atrTrailMult = input.float(1.5, "ATR Multiplier Runner", step=0.1, group=G_BOT_R
 atrTrailLen = input.int(14, "ATR Length Runner", group=G_BOT_RISK)
 
 // ===== ATR (spójny z presetem/custom) =====
-atr_val = ta.atr(f_atrLen)
-trail = atr_val * f_atrMult
+atr_val = ta.atr(atrTrailLen)
+trail = atr_val * atrTrailMult
 
 // ===== FLAGS =====
 var bool tp1_hit_long = false
@@ -935,11 +975,6 @@ if strategy.position_size > 0
             if useEP2
                 strategy.close("EP2 L")
 
-// ===== MARKET ENTRY FALLBACK =====
-if useMarketIfMissed and isLongSetup and strategy.position_size == 0 and close > origTP_long
-    strategy.entry("MKT L", strategy.long, alert_message='{"signal":"buy","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(activeSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + '}')
-    isLongSetup := false
-
 // ==========================
 // SHORT
 // ==========================
@@ -998,10 +1033,6 @@ if strategy.position_size < 0
             if useEP2
                 strategy.close("EP2 S")
 
-if useMarketIfMissed and isShortSetup and strategy.position_size == 0 and close < origTP_short
-    strategy.entry("MKT S", strategy.short, alert_message='{"signal":"sell","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(activeSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + '}')
-    isShortSetup := false
-
 // ==========================
 // RESET
 // ==========================
@@ -1017,6 +1048,8 @@ if strategy.position_size == 0 and strategy.position_size[1] != 0
     origSL := na
     origTP_long := na
     origTP_short := na
+    setupBarLong := na
+    setupBarShort := na
     strategy.cancel_all()
 bars_held = strategy.opentrades > 0 ? (bar_index - strategy.opentrades.entry_bar_index(0)) : 0
 if useTimeStop and strategy.position_size > 0 and bars_held >= ftBars
@@ -1029,7 +1062,7 @@ if useTimeStop and strategy.position_size < 0 and bars_held >= ftBars
         strategy.close_all(comment="Time Stop", alert_message=msgExitShort)
 f_tf(tf) =>
     tf == "1" ? "1m" : tf == "3" ? "3m" : tf == "5" ? "5m" : tf == "15" ? "15m" : tf == "30" ? "30m" : tf == "45" ? "45m" : tf == "60" ? "1h" : tf == "120" ? "2h" : tf == "240" ? "4h" : tf == "D" or tf == "1D" ? "1d" : tf == "W" or tf == "1W" ? "1w" : tf
-var table hud = table.new(position.top_right, 11, 9, bgcolor=color.new(color.black, 100))
+var table hud = table.new(position.top_right, 11, 9, bgcolor=color.new(color.black, 70))
 if barstate.isfirst
     for i = 0 to 7
         table.merge_cells(hud, 0, i, 10, i)
@@ -1044,8 +1077,6 @@ if barstate.islast
     int max_iters = 100
     int safeEnd = strategy.closedtrades > 0 ? strategy.closedtrades - 1 : -1
     for iter = 0 to (safeEnd == -1 ? 0 : safeEnd)
-        if safeEnd == -1
-            break
         int i = safeEnd - iter
         if i < 0 or max_iters <= 0
             break
@@ -1113,7 +1144,7 @@ if barstate.islast
         table.cell(hud, 10, 8, useScoring ? str.tostring(activeStars) + "★ " + str.tostring(activeScore) + "/9" : "Score[OFF]", text_color=useScoring ? scoreCol : color.gray, text_size=size.tiny, text_halign=text.align_right)
     else
         for j = 0 to 10
-            table.cell(hud, j, 8, "", text_color=color(na))
+            table.cell(hud, j, 8, " ", text_color=color.gray)
 
 //=====================================================================================================================
 // ALERTS — CORNIX + TELEGRAM
