@@ -1,5 +1,5 @@
 //@version=5
-strategy('SMC Fibo + LuxAlgo Ultimate', 'LuxAlgo SMC Bot', overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=1.0, margin_long=1, margin_short=1, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+strategy('SMC Fibo + LuxAlgo Ultimate', 'LuxAlgo SMC Bot', overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=1.0, margin_long=1, margin_short=1, max_labels_count=500, max_lines_count=500, max_boxes_count=500, calc_on_every_tick=true)
 //=====================================================================================================================
 // [1] LUXALGO SMC SETTINGS & CONSTANTS
 //=====================================================================================================================
@@ -93,6 +93,7 @@ c_ep2Max = input.float(0.79, "EP2 Max [CUSTOM/HYBRID]", step=0.01, group=G_BOT_R
 G_BOT_FILT = "🤖 [2.B] BOT - PRO FILTRY TRANZAKCJI"
 
 useMarketIfMissed = input.bool(true, "Market entry jeśli brak retrace", group=G_BOT_RISK)
+useMarketEntry = input.bool(false, title="Market Entry (od razu po sygnale, bez retracement)", group=G_BOT_RISK)
 minRR = input.float(1.5, "RR Target (mnożnik ryzyka)", group=G_BOT_RISK)
 
 // ===== CUSTOM ATR =====
@@ -807,7 +808,7 @@ if isLongSetup
     EP2_max   = useEP2 ? (fib0 - (fib0 - fib100) * f_ep2Max) : na
     rr_ep1 = (longTP - EP1_limit) / (EP1_limit - longSL)
     rr_ep2 = useEP2 ? (longTP - EP2_limit) / (EP2_limit - longSL) : na
-    rr_long := useEP2 ? rr_ep2 : rr_ep1
+    rr_long := useMarketEntry ? (longTP - close) / (close - longSL) : (useEP2 ? rr_ep2 : rr_ep1)
 
     ep1MinDraw := EP1_limit
     ep1MaxDraw := EP1_max
@@ -815,7 +816,14 @@ if isLongSetup
     ep2MaxDraw := EP2_max
 
     if strategy.position_size == 0
-        if low < longSL
+        if useMarketEntry
+            activeSL := longSL
+            origSL := longSL
+            activeTP := close + (close - longSL) * minRR
+            string msgBuyMkt = '{"signal":"buy","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(longSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBull) + '}'
+            qtyMkt = calcQty(close, longSL, actualRisk)
+            strategy.entry("EP1 L", strategy.long, qty=qtyMkt, alert_message=msgBuyMkt)
+        else if low < longSL
             isLongSetup := false
             strategy.cancel_all()
         else if high > origTP_long
@@ -856,7 +864,7 @@ if isShortSetup
     EP2_max   = useEP2 ? (fib0 + (fib100 - fib0) * f_ep2Max) : na
     rr_ep1_s = (EP1_limit - shortTP) / (shortSL - EP1_limit)
     rr_ep2_s = useEP2 ? (EP2_limit - shortTP) / (shortSL - EP2_limit) : na
-    rr_short := useEP2 ? rr_ep2_s : rr_ep1_s
+    rr_short := useMarketEntry ? (close - shortTP) / (shortSL - close) : (useEP2 ? rr_ep2_s : rr_ep1_s)
 
     ep1MinDraw := EP1_limit
     ep1MaxDraw := EP1_max
@@ -864,7 +872,14 @@ if isShortSetup
     ep2MaxDraw := EP2_max
 
     if strategy.position_size == 0
-        if high > shortSL
+        if useMarketEntry
+            activeSL := shortSL
+            origSL := shortSL
+            activeTP := close - (shortSL - close) * minRR
+            string msgSellMkt = '{"signal":"sell","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(shortSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBear) + '}'
+            qtyMkt = calcQty(close, shortSL, actualRisk)
+            strategy.entry("EP1 S", strategy.short, qty=qtyMkt, alert_message=msgSellMkt)
+        else if high > shortSL
             isShortSetup := false
             strategy.cancel_all()
         else if low < origTP_short
@@ -1062,7 +1077,7 @@ if useTimeStop and strategy.position_size < 0 and bars_held >= ftBars
         strategy.close_all(comment="Time Stop", alert_message=msgExitShort)
 f_tf(tf) =>
     tf == "1" ? "1m" : tf == "3" ? "3m" : tf == "5" ? "5m" : tf == "15" ? "15m" : tf == "30" ? "30m" : tf == "45" ? "45m" : tf == "60" ? "1h" : tf == "120" ? "2h" : tf == "240" ? "4h" : tf == "D" or tf == "1D" ? "1d" : tf == "W" or tf == "1W" ? "1w" : tf
-var table hud = table.new(position.top_right, 11, 9, bgcolor=color.new(color.black, 70))
+var table hud = table.new(position.top_right, 11, 9, bgcolor=color(na))
 if barstate.isfirst
     for i = 0 to 7
         table.merge_cells(hud, 0, i, 10, i)
@@ -1128,8 +1143,20 @@ if barstate.islast
     if showDebugPanel
         color f_g = color.new(color.green, 50)
         color f_r = color.new(color.red, 50)
-        int activeStars = strategy.position_size > 0 ? starsBull : strategy.position_size < 0 ? starsBear : 0
-        int activeScore = strategy.position_size > 0 ? scoreBull : strategy.position_size < 0 ? scoreBear : 0
+        int activeStars = 0
+        int activeScore = 0
+        if strategy.position_size > 0
+            activeStars := starsBull
+            activeScore := scoreBull
+        else if strategy.position_size < 0
+            activeStars := starsBear
+            activeScore := scoreBear
+        else if isLongSetup
+            activeStars := starsBull
+            activeScore := scoreBull
+        else if isShortSetup
+            activeStars := starsBear
+            activeScore := scoreBear
         color scoreCol = activeStars >= 4 ? f_g : activeStars == 3 ? color.new(color.orange, 30) : f_r
         table.cell(hud, 0, 8, "Imp", text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
         table.cell(hud, 1, 8, "●", text_color=recentImpulse?f_g:f_r, text_size=size.tiny, text_halign=text.align_left)
