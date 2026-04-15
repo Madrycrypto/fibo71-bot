@@ -30,141 +30,177 @@ HIGHLOW = 'High/Low'
 SOLID = '⎯⎯⎯'
 DASHED = '----'
 DOTTED = '····'
-G_LUX1 = '📈 [1.A] LUXALGO - GENERAL & INTERNALS'
-G_LUX2 = '📈 [1.B] LUXALGO - SWINGS & LEVELS'
-G_LUX3 = '📈 [1.C] LUXALGO - OB & EQH/EQL'
-modeInput = input.string( HISTORICAL, 'Mode', group = G_LUX1, options = [HISTORICAL, PRESENT])
-styleInput = input.string( COLORED, 'Style', group = G_LUX1, options = [COLORED, MONOCHROME])
-showTrendInput = input(false, 'Color Candles', group = G_LUX1)
-showInternalsInput = input(true, 'Show Internal Structure', group = G_LUX1)
-showInternalBullInput = input.string(ALL, 'Bullish Structure', group = G_LUX1, inline = 'ibull', options = [ALL,BOS,CHOCH])
-internalBullColorInput = input(GREEN, '', group = G_LUX1, inline = 'ibull')
-showInternalBearInput = input.string(ALL, 'Bearish Structure' , group = G_LUX1, inline = 'ibear', options = [ALL,BOS,CHOCH])
-internalBearColorInput = input(RED, '', group = G_LUX1, inline = 'ibear')
-internalFilterConfluenceInput = input(false, 'Confluence Filter', group = G_LUX1)
-internalStructureSize = input.string(TINY, 'Internal Label Size', group = G_LUX1, options = [TINY,SMALL,NORMAL])
-showStructureInput = input(true, 'Show Swing Structure', group = G_LUX2)
-showSwingBullInput = input.string(ALL, 'Bullish Structure', group = G_LUX2, inline = 'bull', options = [ALL,BOS,CHOCH])
-swingBullColorInput = input(GREEN, '', group = G_LUX2, inline = 'bull')
-showSwingBearInput = input.string(ALL, 'Bearish Structure', group = G_LUX2, inline= 'bear', options = [ALL,BOS,CHOCH])
-swingBearColorInput = input(RED, '', group = G_LUX2, inline = 'bear')
-swingStructureSize = input.string(SMALL, 'Swing Label Size', group = G_LUX2, options = [TINY,SMALL,NORMAL])
-showSwingsInput = input(false, 'Show Swings Points', group = G_LUX2, inline = 'swings')
-swingsLengthInput = input.int(50, '', group = G_LUX2, minval = 10, inline = 'swings')
-showHighLowSwingsInput = input(true, 'Show Strong/Weak High/Low',group = G_LUX2)
-showInternalOrderBlocksInput = input(true, 'Internal Order Blocks' , group = G_LUX3, inline = 'iob')
-internalOrderBlocksSizeInput = input.int(5, '', group = G_LUX3, minval = 1, maxval = 20, inline = 'iob')
-showSwingOrderBlocksInput = input(false, 'Swing Order Blocks', group = G_LUX3, inline = 'ob')
-swingOrderBlocksSizeInput = input.int(5, '', group = G_LUX3, minval = 1, maxval = 20, inline = 'ob') 
-orderBlockFilterInput = input.string('Atr', 'Order Block Filter', group = G_LUX3, options = [ATR, RANGE])
-orderBlockMitigationInput = input.string(HIGHLOW, 'Order Block Mitigation', group = G_LUX3, options = [CLOSE,HIGHLOW])
-internalBullishOrderBlockColor = input.color(color.new(#3179f5, 80), 'Internal Bullish OB', group = G_LUX3)
-internalBearishOrderBlockColor = input.color(color.new(#f77c80, 80), 'Internal Bearish OB', group = G_LUX3)
-swingBullishOrderBlockColor = input.color(color.new(#1848cc, 80), 'Bullish OB', group = G_LUX3)
-swingBearishOrderBlockColor = input.color(color.new(#b22833, 80), 'Bearish OB', group = G_LUX3)
-showEqualHighsLowsInput = input(true, 'Equal High/Low', group = G_LUX3)
-equalHighsLowsLengthInput = input.int(3, 'Bars Confirmation', group = G_LUX3, minval = 1)
-equalHighsLowsThresholdInput = input.float(0.1, 'Threshold', group = G_LUX3, minval = 0, maxval = 0.5, step = 0.1)
-equalHighsLowsSizeInput = input.string(TINY, 'Label Size', group = G_LUX3, options = [TINY,SMALL,NORMAL])
-showFairValueGapsInput = input(false, 'Fair Value Gaps', group = G_LUX3)
-fairValueGapsThresholdInput = input(true, 'Auto Threshold', group = G_LUX3)
-fairValueGapsTimeframeInput = input.timeframe('', 'Timeframe', group = G_LUX3)
-fairValueGapsBullColorInput = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = G_LUX3)
-fairValueGapsBearColorInput = input.color(color.new(#ff0008, 70), 'Bearish FVG' , group = G_LUX3)
-fairValueGapsExtendInput = input.int(1, 'Extend FVG', group = G_LUX3, minval = 0)
+// ===== GROUP CONSTANTS =====
+G_SMC1     = '📊 [1] SMC — Struktura'
+G_SMC2     = '📦 [2] SMC — Order Blocks & Strefy'
+G_ENTRY    = '🎯 [3] Sygnał i Wejście'
+G_FIBO     = '📐 [4] Strefy Fibo'
+G_RISK     = '💰 [5] Ryzyko i Take Profit'
+G_FILT_TM  = '🛡️ [6] Filtry — Sesja i Czas'
+G_FILT_Q   = '🔍 [7] Filtry — Jakość Setupu'
+G_FILT_HTF = '🔀 [8] Filtry — HTF Bias'
+G_EXIT     = '🔧 [9] Exit — Zarządzanie Pozycją'
+G_VIS      = '🎨 [10] Wygląd'
+G_WEBHOOK  = '🔗 [11] Webhook'
 
 //=====================================================================================================================
-// [2] BOT TRADING SETTINGS (FIBO GRID & EXECUTION)
+// 📊 [1] SMC — STRUKTURA I SWINGE
 //=====================================================================================================================
-G_BOT_RISK = "🤖 [2.A] BOT - RYZYKO I SIATKA FIBO"
-// ===== CONTROL MODE =====
-controlMode = input.string("PRESET", "Tryb kontroli", 
-     options=["PRESET", "CUSTOM", "HYBRID"], group=G_BOT_RISK)
-// ===== PRESETS =====
-preset = input.string("AUTO", "Preset rynku", 
-     options=["AUTO", "CRYPTO", "FOREX", "GOLD", "INDICES"], group=G_BOT_RISK)
+modeInput = input.string( HISTORICAL, 'Mode', group = G_SMC1, options = [HISTORICAL, PRESENT])
+styleInput = input.string( COLORED, 'Style', group = G_SMC1, options = [COLORED, MONOCHROME])
+showTrendInput = input(false, 'Color Candles', group = G_SMC1)
+showInternalsInput = input(true, 'Show Internal Structure', group = G_SMC1)
+showInternalBullInput = input.string(ALL, 'Bullish Structure', group = G_SMC1, inline = 'ibull', options = [ALL,BOS,CHOCH])
+internalBullColorInput = input(GREEN, '', group = G_SMC1, inline = 'ibull')
+showInternalBearInput = input.string(ALL, 'Bearish Structure' , group = G_SMC1, inline = 'ibear', options = [ALL,BOS,CHOCH])
+internalBearColorInput = input(RED, '', group = G_SMC1, inline = 'ibear')
+internalFilterConfluenceInput = input(false, 'Confluence Filter', group = G_SMC1)
+internalStructureSize = input.string(TINY, 'Internal Label Size', group = G_SMC1, options = [TINY,SMALL,NORMAL])
+showStructureInput = input(true, 'Show Swing Structure', group = G_SMC1)
+showSwingBullInput = input.string(ALL, 'Bullish Structure', group = G_SMC1, inline = 'bull', options = [ALL,BOS,CHOCH])
+swingBullColorInput = input(GREEN, '', group = G_SMC1, inline = 'bull')
+showSwingBearInput = input.string(ALL, 'Bearish Structure', group = G_SMC1, inline= 'bear', options = [ALL,BOS,CHOCH])
+swingBearColorInput = input(RED, '', group = G_SMC1, inline = 'bear')
+swingStructureSize = input.string(SMALL, 'Swing Label Size', group = G_SMC1, options = [TINY,SMALL,NORMAL])
+showSwingsInput = input(false, 'Show Swings Points', group = G_SMC1, inline = 'swings')
+swingsLengthInput = input.int(50, '', group = G_SMC1, minval = 10, inline = 'swings')
+showHighLowSwingsInput = input(true, 'Show Strong/Weak High/Low',group = G_SMC1)
 
-// ===== CUSTOM EP (tylko gdy Tryb = CUSTOM lub HYBRID) =====
-c_ep1Min = input.float(0.32, "EP1 Min [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
-c_ep1Max = input.float(0.38, "EP1 Max [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
-c_ep2Min = input.float(0.62, "EP2 Min [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
-c_ep2Max = input.float(0.79, "EP2 Max [CUSTOM/HYBRID]", step=0.01, group=G_BOT_RISK)
+//=====================================================================================================================
+// 📦 [2] SMC — ORDER BLOCKS & STREFY
+//=====================================================================================================================
+showInternalOrderBlocksInput = input(true, 'Internal Order Blocks' , group = G_SMC2, inline = 'iob')
+internalOrderBlocksSizeInput = input.int(5, '', group = G_SMC2, minval = 1, maxval = 20, inline = 'iob')
+showSwingOrderBlocksInput = input(false, 'Swing Order Blocks', group = G_SMC2, inline = 'ob')
+swingOrderBlocksSizeInput = input.int(5, '', group = G_SMC2, minval = 1, maxval = 20, inline = 'ob')
+orderBlockFilterInput = input.string('Atr', 'Order Block Filter', group = G_SMC2, options = [ATR, RANGE])
+orderBlockMitigationInput = input.string(HIGHLOW, 'Order Block Mitigation', group = G_SMC2, options = [CLOSE,HIGHLOW])
+internalBullishOrderBlockColor = input.color(color.new(#3179f5, 80), 'Internal Bullish OB', group = G_SMC2)
+internalBearishOrderBlockColor = input.color(color.new(#f77c80, 80), 'Internal Bearish OB', group = G_SMC2)
+swingBullishOrderBlockColor = input.color(color.new(#1848cc, 80), 'Bullish OB', group = G_SMC2)
+swingBearishOrderBlockColor = input.color(color.new(#b22833, 80), 'Bearish OB', group = G_SMC2)
+showEqualHighsLowsInput = input(true, 'Equal High/Low', group = G_SMC2)
+equalHighsLowsLengthInput = input.int(3, 'Bars Confirmation', group = G_SMC2, minval = 1)
+equalHighsLowsThresholdInput = input.float(0.1, 'Threshold', group = G_SMC2, minval = 0, maxval = 0.5, step = 0.1)
+equalHighsLowsSizeInput = input.string(TINY, 'Label Size', group = G_SMC2, options = [TINY,SMALL,NORMAL])
+showFairValueGapsInput = input(false, 'Fair Value Gaps', group = G_SMC2)
+fairValueGapsThresholdInput = input(true, 'Auto Threshold', group = G_SMC2)
+fairValueGapsTimeframeInput = input.timeframe('', 'Timeframe', group = G_SMC2)
+fairValueGapsBullColorInput = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = G_SMC2)
+fairValueGapsBearColorInput = input.color(color.new(#ff0008, 70), 'Bearish FVG' , group = G_SMC2)
+fairValueGapsExtendInput = input.int(1, 'Extend FVG', group = G_SMC2, minval = 0)
 
-G_BOT_FILT = "🤖 [2.B] BOT - PRO FILTRY TRANZAKCJI"
+//=====================================================================================================================
+// 🎯 [3] SYGNAŁ I WEJŚCIE
+//=====================================================================================================================
+triggerSource = input.string("Swing BOS", title="Sygnał główny (Trigger)", options=["Swing BOS", "Swing CHoCH", "Swing All", "Internal BOS", "Internal CHoCH", "Internal All"], group=G_ENTRY)
+useMarketEntry = input.bool(false, title="Market Entry (od razu po sygnale, bez retracement)", group=G_ENTRY)
+useMarketIfMissed = input.bool(true, "Market entry jeśli brak retrace", group=G_ENTRY)
+tradeLongs = input.bool(true, title="Rozgrywaj LONG", group=G_ENTRY)
+tradeShorts = input.bool(true, title="Rozgrywaj SHORT", group=G_ENTRY)
 
-useMarketIfMissed = input.bool(true, "Market entry jeśli brak retrace", group=G_BOT_RISK)
-useMarketEntry = input.bool(false, title="Market Entry (od razu po sygnale, bez retracement)", group=G_BOT_RISK)
-minRR = input.float(1.5, "RR Target (mnożnik ryzyka)", group=G_BOT_RISK)
+//=====================================================================================================================
+// 📐 [4] STREFY FIBO
+//=====================================================================================================================
+controlMode = input.string("PRESET", "Tryb kontroli",
+     options=["PRESET", "CUSTOM", "HYBRID"], group=G_FIBO)
+preset = input.string("AUTO", "Preset rynku",
+     options=["AUTO", "CRYPTO", "FOREX", "GOLD", "INDICES"], group=G_FIBO)
+c_ep1Min = input.float(0.32, "EP1 Min [CUSTOM/HYBRID]", step=0.01, group=G_FIBO)
+c_ep1Max = input.float(0.38, "EP1 Max [CUSTOM/HYBRID]", step=0.01, group=G_FIBO)
+c_ep2Min = input.float(0.62, "EP2 Min [CUSTOM/HYBRID]", step=0.01, group=G_FIBO)
+c_ep2Max = input.float(0.79, "EP2 Max [CUSTOM/HYBRID]", step=0.01, group=G_FIBO)
+c_atrMult = input.float(1.5, "CUSTOM ATR Mult", step=0.1, group=G_FIBO)
+c_atrLen  = input.int(14, "CUSTOM ATR Len", group=G_FIBO)
+useEP2 = input.bool(true, title="Aktywuj drugą strefę EP2", group=G_FIBO)
+cancelEp2Opposite = input.bool(true, title="Anuluj EP2 przy przeciwnym impulsie", group=G_FIBO)
+trailSLBox = input.bool(true, title="Ruchomy Fibo (podąża z ceną)", group=G_FIBO)
 
-// ===== CUSTOM ATR =====
-c_atrMult = input.float(1.5, "CUSTOM ATR Mult", step=0.1, group=G_BOT_FILT)
-c_atrLen  = input.int(14, "CUSTOM ATR Len", group=G_BOT_FILT)
-
-// ===== SESSION =====
-useSessionFilter = input.bool(true, "Filtr Sesji", group=G_BOT_FILT)
-sessAsian  = input.bool(false, "Asian (00-08 CET)", group=G_BOT_FILT)
-sessLondon = input.bool(true, "London (08-16 CET)", group=G_BOT_FILT)
-sessNY     = input.bool(true, "New York (14-22 CET)", group=G_BOT_FILT)
-
-triggerSource = input.string("Swing BOS", title="Sygnał główny z LuxAlgo do Wejścia (Trigger)", options=["Swing BOS", "Swing CHoCH", "Swing All", "Internal BOS", "Internal CHoCH", "Internal All"], group=G_BOT_RISK)
-riskPercent = input.float(1.0, title="Ryzyko Całkowite (%) - Dzieli się 50/50 jeśli EP2", step=0.1, group=G_BOT_RISK)
+//=====================================================================================================================
+// 💰 [5] RYZYKO I TAKE PROFIT
+//=====================================================================================================================
+riskPercent = input.float(1.0, title="Ryzyko Całkowite (%)", step=0.1, group=G_RISK)
+useDynamicRisk = input.bool(true, title="Dynamic Risk (skaluj po ★)", group=G_RISK)
+riskScale5 = input.float(1.5, title="- 5★ Risk Multiplier", step=0.1, group=G_RISK)
+riskScale4 = input.float(1.2, title="- 4★ Risk Multiplier", step=0.1, group=G_RISK)
+riskScale3 = input.float(1.0, title="- 3★ Risk Multiplier", step=0.1, group=G_RISK)
+riskScale2 = input.float(0.5, title="- 2★ Risk Multiplier", step=0.1, group=G_RISK)
+useDynamicTP = input.bool(true, title="Dynamic TP (structure target dla 5★)", group=G_RISK)
+slOffsetPips = input.float(2.0, title="Stop Loss Offset (Pipsy)", step=0.5, group=G_RISK)
+tpMode = input.string("100% na TP", title="Zasada Take Profit", options=["100% na TP", "RR Target", "70% TP1 / 30% Runner"], group=G_RISK)
+minRR = input.float(1.5, "RR Target (mnożnik ryzyka)", group=G_RISK)
 var float actualRisk = riskPercent
-// ===== DYNAMIC RISK =====
-useDynamicRisk = input.bool(true, title="Dynamic Risk (skaluj po ★)", group=G_BOT_RISK)
-riskScale5 = input.float(1.5, title="- 5★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
-riskScale4 = input.float(1.2, title="- 4★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
-riskScale3 = input.float(1.0, title="- 3★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
-riskScale2 = input.float(0.5, title="- 2★ Risk Multiplier", step=0.1, group=G_BOT_RISK)
-// ===== DYNAMIC TP =====
-useDynamicTP = input.bool(true, title="Dynamic TP (structure target dla 5★)", group=G_BOT_RISK)
-useEP2 = input.bool(true, title="Aktywuj drugą strefę EP2", group=G_BOT_RISK)
-cancelEp2Opposite = input.bool(true, title="Anuluj zawieszone EP2 przy przeciwnym impulsie", group=G_BOT_RISK)
-slOffsetPips = input.float(2.0, title="Stop Loss Offset (Pipsy)", step=0.5, group=G_BOT_RISK)
-tpMode = input.string("100% na TP", title="Zasada Take Profit", options=["100% na TP", "RR Target", "70% TP1 / 30% Runner"], group=G_BOT_RISK)
-trailSLBox = input.bool(true, title="Ruchomy Fibo (SL i cała siatka podąża z ceną)", group=G_BOT_RISK)
-useDateFilter = input.bool(true, title="Ogranicz tranzakcje (Wymóg limitu krypto/walut 3k)", group=G_BOT_RISK)
-maxBarsBack = input.int(5000, title="Zezwalaj na wejścia tylko z ost. X świec", minval=500, maxval=30000, group=G_BOT_RISK)
-tradeLongs = input.bool(true, title="Rozgrywaj pozycje LONG", group=G_BOT_FILT)
-tradeShorts = input.bool(true, title="Rozgrywaj pozycje SHORT", group=G_BOT_FILT)
-reqSweep = input.bool(true, title="Wymagaj Liquidity Sweep (% pod dołkiem)", group=G_BOT_FILT)
-sweepLookback = input.int(10, title="- Zasięg szukania płynności (świece)", group=G_BOT_FILT)
-sweepMinDeviation = input.float(0.0, title="- Minimalne przebicie Sweepa (%)", step=0.01, group=G_BOT_FILT)
-useDisplacement = input.bool(true, title="Wymagaj Impulsu (Displacement)", group=G_BOT_FILT)
-impulseMultiplier = input.float(1.5, title="- Mnożnik Impulsu wolumenu", step=0.1, group=G_BOT_FILT)
-useAntiChop = input.bool(true, title="Anty-Chop (Blokada zafałszowań ruchu)", group=G_BOT_FILT)
-chopLookback = input.int(20, title="- Zasięg Chop Lookback", group=G_BOT_FILT)
-chopThreshold = input.int(3, title="- Próg Chop", group=G_BOT_FILT)
-useTimeStop = input.bool(true, title="Follow-Through (Wyjście z konsoli na plus)", group=G_BOT_FILT)
-ftBars = input.int(8, title="- Max świec oczekiwania", group=G_BOT_FILT)
-ftMinMove = input.float(0.1, title="- Min ruch ratujący przed wyjściem (%)", step=0.02, group=G_BOT_FILT)
-useOnePerStruct = input.bool(true, title="Max 1 Trade na strukturę", group=G_BOT_FILT)
-signalExpiryBars = input.int(500, title="Wygasanie sygnału (świece)", minval=1, maxval=5000, group=G_BOT_FILT)
-useBE = input.bool(true, title="Break-Even po nowym kierunku", group=G_BOT_FILT)
-adaptiveOption = input.string("AUTO", title="Tryb Adaptive Mode", options=["OFF", "TREND_ONLY", "COUNTER_TREND", "AUTO"], group=G_BOT_FILT)
-// ===== SCORING SYSTEM =====
-useScoring = input.bool(true, title="System Oceny Setupów (1-5 ★)", group=G_BOT_FILT)
-minScoreStars = input.int(3, title="- Min gwiazdki do wejścia", minval=1, maxval=5, group=G_BOT_FILT)
-showScoreLabels = input.bool(true, title="- Pokaż gwiazdki na chart", group=G_BOT_FILT)
-// ===== VOLATILITY REGIME =====
-useRegime = input.bool(true, title="Volatility Regime (ADX auto-switch)", group=G_BOT_FILT)
-adxLen = input.int(14, title="- ADX Długość", group=G_BOT_FILT)
-useHTF = input.bool(false, title="Wymagaj Zgodności z HTF", group="🤖 [2.C] BOT - HTF Bias")
-invertHTF = input.bool(false, title="Odwróć Zgodność HTF (Graj kontrę)", group="🤖 [2.C] BOT - HTF Bias")
-htf_res_input = input.string("Auto", title="Interwał HTF", group="🤖 [2.C] BOT - HTF Bias", options=["Auto", "15", "60", "240", "D"])
-botColorSL = input.color(color.red, "Kolor Stop Loss", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botWidthSL = input.int(2, "Grubość Stop Loss", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botColorTP = input.color(color.green, "Kolor Take Profit", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botWidthTP = input.int(2, "Grubość Take Profit", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botColorEP1 = input.color(color.blue, "Kolor / Wypełnienie EP1", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botWidthEP1 = input.int(1, "Grubość Krawędzi EP1", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botColorEP2 = input.color(color.purple, "Kolor / Wypełnienie EP2", group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-botWidthEP2 = input.int(1, "Grubość Krawędzi EP2", minval=1, maxval=5, group="🤖 [2.D] BOT - WIZUALIZACJA FIBO")
-useATR = input.bool(true, title="Filtr Zmienności ATR", group=G_BOT_FILT)
-atrLen = input.int(14, title="- Długość bazowa ATR", group=G_BOT_FILT)
-atrSmooth = input.int(50, title="- Uśrednienie ATR", group=G_BOT_FILT)
-atrThresholdMult = input.float(1.0, title="- Mnożnik progu", step=0.1, group=G_BOT_FILT)
-webhookToken = input.string("token", title="Token Webhook", group="Webhook")
-showDebugPanel = input.bool(true, title="Pokaż wskaźniki Debug Panel w HUD", group="Wizualizacja")
+
+//=====================================================================================================================
+// 🛡️ [6] FILTRY — SESJA I CZAS
+//=====================================================================================================================
+useSessionFilter = input.bool(true, "Filtr Sesji", group=G_FILT_TM)
+sessAsian  = input.bool(false, "Asian (00-08 CET)", group=G_FILT_TM)
+sessLondon = input.bool(true, "London (08-16 CET)", group=G_FILT_TM)
+sessNY     = input.bool(true, "New York (14-22 CET)", group=G_FILT_TM)
+useDateFilter = input.bool(true, title="Ogranicz tranzakcje (limit 3k)", group=G_FILT_TM)
+maxBarsBack = input.int(5000, title="Zezwalaj na wejścia z ost. X świec", minval=500, maxval=30000, group=G_FILT_TM)
+signalExpiryBars = input.int(500, title="Wygasanie sygnału (świece)", minval=1, maxval=5000, group=G_FILT_TM)
+
+//=====================================================================================================================
+// 🔍 [7] FILTRY — JAKOŚĆ SETUPU
+//=====================================================================================================================
+useScoring = input.bool(true, title="System Oceny Setupów (1-5 ★)", group=G_FILT_Q)
+minScoreStars = input.int(3, title="- Min gwiazdki do wejścia", minval=1, maxval=5, group=G_FILT_Q)
+showScoreLabels = input.bool(true, title="- Pokaż gwiazdki na chart", group=G_FILT_Q)
+useRegime = input.bool(true, title="Volatility Regime (ADX)", group=G_FILT_Q)
+adxLen = input.int(14, title="- ADX Długość", group=G_FILT_Q)
+useATR = input.bool(true, title="Filtr Zmienności ATR", group=G_FILT_Q)
+atrLen = input.int(14, title="- Długość bazowa ATR", group=G_FILT_Q)
+atrSmooth = input.int(50, title="- Uśrednienie ATR", group=G_FILT_Q)
+atrThresholdMult = input.float(1.0, title="- Mnożnik progu", step=0.1, group=G_FILT_Q)
+useDisplacement = input.bool(true, title="Wymagaj Impulsu (Displacement)", group=G_FILT_Q)
+impulseMultiplier = input.float(1.5, title="- Mnożnik Impulsu", step=0.1, group=G_FILT_Q)
+reqSweep = input.bool(true, title="Wymagaj Liquidity Sweep", group=G_FILT_Q)
+sweepLookback = input.int(10, title="- Zasięg szukania płynności", group=G_FILT_Q)
+sweepMinDeviation = input.float(0.0, title="- Min przebicie (%)", step=0.01, group=G_FILT_Q)
+useAntiChop = input.bool(true, title="Anty-Chop (Blokada fałszywych ruchów)", group=G_FILT_Q)
+chopLookback = input.int(20, title="- Zasięg Chop", group=G_FILT_Q)
+chopThreshold = input.int(3, title="- Próg Chop", group=G_FILT_Q)
+adaptiveOption = input.string("AUTO", title="Adaptive Mode", options=["OFF", "TREND_ONLY", "COUNTER_TREND", "AUTO"], group=G_FILT_Q)
+
+//=====================================================================================================================
+// 🔀 [8] FILTRY — HTF BIAS
+//=====================================================================================================================
+useHTF = input.bool(false, title="Wymagaj Zgodności z HTF", group=G_FILT_HTF)
+invertHTF = input.bool(false, title="Odwróć HTF (Graj kontrę)", group=G_FILT_HTF)
+htf_res_input = input.string("Auto", title="Interwał HTF", group=G_FILT_HTF, options=["Auto", "15", "60", "240", "D"])
+
+//=====================================================================================================================
+// 🔧 [9] EXIT — ZARZĄDZANIE POZYCJĄ
+//=====================================================================================================================
+useBE = input.bool(true, title="Break-Even po nowym kierunku", group=G_EXIT)
+useTimeStop = input.bool(true, title="Follow-Through (wyjście na plus)", group=G_EXIT)
+ftBars = input.int(8, title="- Max świec oczekiwania", group=G_EXIT)
+ftMinMove = input.float(0.1, title="- Min ruch ratujący (%)", step=0.02, group=G_EXIT)
+useOnePerStruct = input.bool(true, title="Max 1 Trade na strukturę", group=G_EXIT)
+useRunnerTrail = input.bool(true, "Trailing Runner (po TP1)", group=G_EXIT)
+atrTrailMult = input.float(1.5, "ATR Multiplier Runner", step=0.1, group=G_EXIT)
+atrTrailLen = input.int(14, "ATR Length Runner", group=G_EXIT)
+
+//=====================================================================================================================
+// 🎨 [10] WYGLĄD
+//=====================================================================================================================
+botColorSL = input.color(color.red, "Kolor Stop Loss", group=G_VIS)
+botWidthSL = input.int(2, "Grubość Stop Loss", minval=1, maxval=5, group=G_VIS)
+botColorTP = input.color(color.green, "Kolor Take Profit", group=G_VIS)
+botWidthTP = input.int(2, "Grubość Take Profit", minval=1, maxval=5, group=G_VIS)
+botColorEP1 = input.color(color.blue, "Kolor EP1", group=G_VIS)
+botWidthEP1 = input.int(1, "Grubość EP1", minval=1, maxval=5, group=G_VIS)
+botColorEP2 = input.color(color.purple, "Kolor EP2", group=G_VIS)
+botWidthEP2 = input.int(1, "Grubość EP2", minval=1, maxval=5, group=G_VIS)
+showDebugPanel = input.bool(true, title="Pokaż Debug Panel w HUD", group=G_VIS)
+
+//=====================================================================================================================
+// 🔗 [11] WEBHOOK
+//=====================================================================================================================
+webhookToken = input.string("token", title="Token Webhook", group=G_WEBHOOK)
+
 sessionOK = not useSessionFilter or ((sessAsian and hour >= 0 and hour < 8) or (sessLondon and hour >= 8 and hour < 16) or (sessNY and hour >= 14 and hour < 22))
 inKillZone = (hour >= 8 and hour < 10) or (hour >= 14 and hour < 16)
 //=====================================================================================================================
@@ -820,7 +856,7 @@ if isLongSetup
             activeSL := longSL
             origSL := longSL
             activeTP := close + (close - longSL) * minRR
-            string msgBuyMkt = '{"signal":"buy","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(longSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBull) + '}'
+            string msgBuyMkt = 'LONG ENTRY (Market) | ' + syminfo.ticker + ' | SL: ' + str.tostring(longSL, "#.##") + ' | TP: ' + str.tostring(activeTP, "#.##") + ' | ' + str.tostring(starsBull) + '/9'
             qtyMkt = calcQty(close, longSL, actualRisk)
             strategy.entry("EP1 L", strategy.long, qty=qtyMkt, alert_message=msgBuyMkt)
         else if low < longSL
@@ -832,7 +868,7 @@ if isLongSetup
                 activeSL := longSL
                 origSL := longSL
                 activeTP := tpModeRR ? EP1_limit + (EP1_limit - longSL) * minRR : (useDynamicTP and starsBull >= 5 and not na(trailing.top) and trailing.top > longTP ? trailing.top : longTP)
-                strategy.entry("EP1 L", strategy.long, alert_message='{"signal":"buy","pair":"' + syminfo.ticker + '","entry":"market","stopLoss":' + str.tostring(longSL, "#.##") + ',"takeProfit":' + str.tostring(activeTP, "#.##") + ',"stars":' + str.tostring(starsBull) + '}')
+                strategy.entry("EP1 L", strategy.long, alert_message='LONG ENTRY (Market Missed) | ' + syminfo.ticker + ' | SL: ' + str.tostring(longSL, "#.##") + ' | TP: ' + str.tostring(activeTP, "#.##") + ' | ' + str.tostring(starsBull) + '/9')
                 isLongSetup := false
             else
                 isLongSetup := false
@@ -913,11 +949,6 @@ if isShortSetup
 // ==========================
 // 🔥 PRO EXIT ENGINE (ATR TRAIL + TRUE 100%)
 // ==========================
-
-// ===== INPUTY =====
-useRunnerTrail = input.bool(true, "Trailing tylko dla Runnera (po TP1)", group=G_BOT_RISK)
-atrTrailMult = input.float(1.5, "ATR Multiplier Runner", step=0.1, group=G_BOT_RISK)
-atrTrailLen = input.int(14, "ATR Length Runner", group=G_BOT_RISK)
 
 // ===== ATR (spójny z presetem/custom) =====
 atr_val = ta.atr(atrTrailLen)
