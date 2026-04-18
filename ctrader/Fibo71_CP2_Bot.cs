@@ -433,34 +433,39 @@ namespace Fibo71CP2
             if (!isBullish)
             {
                 // Bearish: TP=swingLow, SL=swingHigh
-                fib0   = _swingLow;
+                fib0 = _swingLow;
                 fib100 = _swingHigh;
                 fib236 = _swingLow + range * 0.236;
                 fib382 = _swingLow + range * 0.382;
-                fib50  = _swingLow + range * 0.5;
+                fib50 = _swingLow + range * 0.5;
                 fib618 = _swingLow + range * 0.618;
-                fib71  = _swingLow + range * FibEntryMin;
-                fib79  = _swingLow + range * FibEntryMax;
+                fib71 = _swingLow + range * FibEntryMin;
+                fib79 = _swingLow + range * FibEntryMax;
             }
             else
             {
                 // Bullish: TP=swingHigh, SL=swingLow
-                fib0   = _swingHigh;
+                fib0 = _swingHigh;
                 fib100 = _swingLow;
                 fib236 = _swingHigh - range * 0.236;
                 fib382 = _swingHigh - range * 0.382;
-                fib50  = _swingHigh - range * 0.5;
+                fib50 = _swingHigh - range * 0.5;
                 fib618 = _swingHigh - range * 0.618;
-                fib71  = _swingHigh - range * FibEntryMin;
-                fib79  = _swingHigh - range * FibEntryMax;
+                fib71 = _swingHigh - range * FibEntryMin;
+                fib79 = _swingHigh - range * FibEntryMax;
             }
 
             var s = new Setup
             {
                 IsBullish = isBullish,
-                Fib0 = fib0, Fib236 = fib236, Fib382 = fib382,
-                Fib50 = fib50, Fib618 = fib618, Fib100 = fib100,
-                Fib71 = fib71, Fib79 = fib79,
+                Fib0 = fib0,
+                Fib236 = fib236,
+                Fib382 = fib382,
+                Fib50 = fib50,
+                Fib618 = fib618,
+                Fib100 = fib100,
+                Fib71 = fib71,
+                Fib79 = fib79,
                 CreatedBarIndex = idx,
                 HitBarIndex = -1,
                 HitResult = 0,
