@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fibo 71 CP 2.0 - Complete Documentation</title>
+<style>
+  @page {
+    size: A4;
+    margin: 2.5cm;
+    @bottom-center {
+      content: counter(page);
+      font-size: 10px;
+      color: #666;
+    }
+    @top-right {
+      content: "Fibo 71 CP 2.0 Documentation";
+      font-size: 9px;
+      color: #999;
+    }
+  }
+  @page :first {
+    @top-right { content: none; }
+    @bottom-center { content: none; }
+  }
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #222;
+    max-width: 100%;
+  }
+  h1 {
+    font-size: 28pt;
+    color: #1a365d;
+    border-bottom: 3px solid #2b6cb0;
+    padding-bottom: 10px;
+    margin-top: 40px;
+    page-break-before: auto;
+  }
+  h1.cover {
+    page-break-after: always;
+    border: none;
+    text-align: center;
+    margin-top: 200px;
+    font-size: 36pt;
+  }
+  h2 {
+    font-size: 18pt;
+    color: #2b6cb0;
+    border-bottom: 2px solid #bee3f8;
+    padding-bottom: 6px;
+    margin-top: 30px;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 14pt;
+    color: #2c5282;
+    margin-top: 20px;
+    page-break-after: avoid;
+  }
+  h4 {
+    font-size: 12pt;
+    color: #2d3748;
+    margin-top: 15px;
+    page-break-after: avoid;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+  th {
+    background-color: #2b6cb0;
+    color: white;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  tr:nth-child(even) {
+    background-color: #f7fafc;
+  }
+  tr:hover {
+    background-color: #edf2f7;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background-color: #edf2f7;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9.5pt;
+  }
+  pre {
+    background-color: #1a202c;
+    color: #e2e8f0;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 9pt;
+    line-height: 1.5;
+    page-break-inside: avoid;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+  .highlight {
+    background-color: #fefcbf;
+    border-left: 4px solid #d69e2e;
+    padding: 12px 16px;
+    margin: 15px 0;
+    page-break-inside: avoid;
+  }
+  .info-box {
+    background-color: #ebf8ff;
+    border-left: 4px solid #3182ce;
+    padding: 12px 16px;
+    margin: 15px 0;
+    page-break-inside: avoid;
+  }
+  .warning-box {
+    background-color: #fff5f5;
+    border-left: 4px solid #e53e3e;
+    padding: 12px 16px;
+    margin: 15px 0;
+    page-break-inside: avoid;
+  }
+  .success-box {
+    background-color: #f0fff4;
+    border-left: 4px solid #38a169;
+    padding: 12px 16px;
+    margin: 15px 0;
+    page-break-inside: avoid;
+  }
+  .toc {
+    page-break-after: always;
+  }
+  .toc ul {
+    list-style: none;
+    padding-left: 0;
+  }
+  .toc ul ul {
+    padding-left: 20px;
+  }
+  .toc li {
+    margin: 6px 0;
+  }
+  .toc a {
+    text-decoration: none;
+    color: #2b6cb0;
+  }
+  .toc a:hover {
+    text-decoration: underline;
+  }
+  .cover-page {
+    page-break-after: always;
+    text-align: center;
+  }
+  .cover-page .logo {
+    font-size: 72pt;
+    margin-bottom: 20px;
+  }
+  .cover-page .subtitle {
+    font-size: 16pt;
+    color: #4a5568;
+    margin-top: 20px;
+  }
+  .cover-page .version {
+    font-size: 12pt;
+    color: #718096;
+    margin-top: 40px;
+  }
+  .cover-page .date {
+    font-size: 12pt;
+    color: #718096;
+    margin-top: 10px;
+  }
+  .diagram {
+    background-color: #f7fafc;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    border-radius: 6px;
+    font-family: 'SF Mono', monospace;
+    font-size: 9pt;
+    line-height: 1.4;
+    white-space: pre;
+    overflow-x: auto;
+    page-break-inside: avoid;
+  }
+  .star { color: #d69e2e; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  .badge-green { background-color: #c6f6d5; color: #22543d; }
+  .badge-blue { background-color: #bee3f8; color: #1a365d; }
+  .badge-red { background-color: #fed7d7; color: #742a2a; }
+  .page-break { page-break-before: always; }
+  ul, ol { margin: 10px 0; }
+  li { margin: 4px 0; }
+  .footer-note {
+    font-size: 9pt;
+    color: #718096;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 10px;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover-page">
+  <div class="logo">FIBO 71</div>
+  <h1 style="border:none; margin-top:0;">CP 2.0 Trading Strategy</h1>
+  <div class="subtitle">Complete Documentation</div>
+  <div class="subtitle">Fibonacci Retracement + Break of Structure + Liquidity Sweep</div>
+  <div style="margin-top:60px;">
+    <p><strong>Multi-Platform Automated Trading System</strong></p>
+    <p>Python / MetaTrader 5 (MQL5) / TradingView (Pine Script)</p>
+  </div>
+  <div class="version">Version 2.0</div>
+  <div class="date">April 2026</div>
+  <div style="margin-top:80px; font-size:10pt; color:#a0aec0;">
+    <p>USE AT YOUR OWN RISK. For educational purposes only.</p>
+    <p>Always test on a demo account first.</p>
+    <p>Past performance does not guarantee future results.</p>
+  </div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ul>
+    <li><strong>1. Strategy Overview</strong></li>
+    <li><strong>2. Core Algorithm</strong>
+      <ul>
+        <li>2.1 Break of Structure (BOS) Detection</li>
+        <li>2.2 Break of Market Structure (BMS) Detection</li>
+        <li>2.3 Extremum Tracking</li>
+        <li>2.4 Fibonacci Level Calculation</li>
+        <li>2.5 Entry Zone Logic</li>
+        <li>2.6 Liquidity Sweep Detection</li>
+        <li>2.7 Confirmation Candle</li>
+      </ul>
+    </li>
+    <li><strong>3. Entry Filters</strong>
+      <ul>
+        <li>3.1 Imbalance (IPA) Filter</li>
+        <li>3.2 Trend Filter (EMA 50/200)</li>
+        <li>3.3 Volume Filter</li>
+        <li>3.4 Volatility Filter (ATR)</li>
+        <li>3.5 Risk:Reward Filter</li>
+      </ul>
+    </li>
+    <li><strong>4. Risk Management</strong>
+      <ul>
+        <li>4.1 Position Sizing</li>
+        <li>4.2 Stop Loss Placement</li>
+        <li>4.3 Take Profit Levels</li>
+        <li>4.4 Daily Limits</li>
+        <li>4.5 Correlation Handling</li>
+      </ul>
+    </li>
+    <li><strong>5. Position Visualization</strong></li>
+    <li><strong>6. Grid Order System</strong></li>
+    <li><strong>7. Architecture &amp; Project Structure</strong>
+      <ul>
+        <li>7.1 Python Implementation</li>
+        <li>7.2 MQL5 Expert Advisor</li>
+        <li>7.3 Pine Script Indicator</li>
+      </ul>
+    </li>
+    <li><strong>8. Configuration</strong>
+      <ul>
+        <li>8.1 Settings File Reference</li>
+        <li>8.2 Configuration Presets</li>
+      </ul>
+    </li>
+    <li><strong>9. Backtest Results</strong>
+      <ul>
+        <li>9.1 H1 Day Trading Results</li>
+        <li>9.2 D1 Swing Trading Results</li>
+        <li>9.3 Zone Performance Analysis</li>
+        <li>9.4 Recommendations</li>
+      </ul>
+    </li>
+    <li><strong>10. Telegram Integration</strong></li>
+    <li><strong>11. VPS Deployment Guide</strong></li>
+    <li><strong>12. CLI Reference</strong></li>
+    <li><strong>13. Pre-Launch Checklist</strong></li>
+    <li><strong>14. Limitations &amp; Disclaimers</strong></li>
+  </ul>
+</div>
+
+<!-- CHAPTER 1: STRATEGY OVERVIEW -->
+<h1>1. Strategy Overview</h1>
+
+<h2>1.1 What is Fibo 71 CP 2.0?</h2>
+<p>
+  <strong>Fibo 71 CP 2.0</strong> is an automated trading strategy that combines <strong>Fibonacci retracement</strong>
+  analysis with <strong>Break of Structure (BOS)</strong> detection to identify high-probability reversal entries
+  in forex markets. The "71" refers to the primary entry zone at the 71-79% Fibonacci retracement level,
+  where deep pullbacks offer favorable risk:reward ratios.
+</p>
+
+<h2>1.2 Core Concept</h2>
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Description</th></tr>
+  <tr><td>Timeframe</td><td>H4 (primary), H1/M15 (optional)</td><td>Primary trading interval</td></tr>
+  <tr><td>Risk per Trade</td><td>1% of account</td><td>0.5% on correlated pairs</td></tr>
+  <tr><td>Entry Zone</td><td>71%-79% Fib retracement</td><td>Deep pullback zone (premium)</td></tr>
+  <tr><td>Take Profit</td><td>Fib 0% (swing extreme)</td><td>Previous swing high/low</td></tr>
+  <tr><td>Stop Loss</td><td>Fib 100% (opposite extreme)</td><td>Full invalidation level</td></tr>
+  <tr><td>Win Rate</td><td>~70% (CP 2.0 with confirmation)</td><td>~40% without confirmation (CP 1.0)</td></tr>
+</table>
+
+<h2>1.3 Strategy Variants</h2>
+<p>The system implements two closely related strategies:</p>
+
+<h3>CP 2.0 (Standard)</h3>
+<ul>
+  <li>Direct BOS (Break of Structure) detection</li>
+  <li>Fibonacci calculated from swing points</li>
+  <li>Entry at 71-79% retracement (limit orders)</li>
+  <li>Single TP at Fib 0%, single SL at Fib 100%</li>
+  <li>Optional: Imbalance and Liquidity Sweep filters</li>
+</ul>
+
+<h3>BMS (Break of Market Structure)</h3>
+<ul>
+  <li>More conservative approach with momentum confirmation</li>
+  <li>Extremum tracking after BMS detection</li>
+  <li>Entry at 62-71% retracement zone</li>
+  <li>3 TP levels with partial closes (33%/33%/34%)</li>
+  <li>Liquidity sweep + confirmation candle required</li>
+  <li>4 configurable filters (Trend, Volume, Volatility, R:R)</li>
+</ul>
+
+<h2>1.4 Multi-Platform Support</h2>
+<table>
+  <tr><th>Platform</th><th>File</th><th>Language</th><th>Purpose</th></tr>
+  <tr><td>MetaTrader 5</td><td><code>src/main.py</code></td><td>Python</td><td>Full bot with all features</td></tr>
+  <tr><td>MetaTrader 5</td><td><code>mt5/Fibo71_CP2_Bot_v3.mq5</code></td><td>MQL5</td><td>Standalone EA (no Python needed)</td></tr>
+  <tr><td>TradingView</td><td><code>pine/Fibo71_CP2_Strategy.pine</code></td><td>Pine Script v5</td><td>Visual indicator + alerts</td></tr>
+</table>
+
+<!-- CHAPTER 2: CORE ALGORITHM -->
+<h1 class="page-break">2. Core Algorithm</h1>
+
+<h2>2.1 Complete Algorithm Flow</h2>
+<div class="diagram">
+Step 1: DETECT BOS/BMS (Break of Structure)
+   |
+   |--> Bullish: close > swing_high (with momentum)
+   |--> Bearish: close < swing_low (with momentum)
+   |
+Step 2: FIND SWING POINTS
+   |
+   |--> For BUY:  Swing Low (start) -> Swing High (end)
+   |--> For SELL:  Swing High (start) -> Swing Low (end)
+   |
+Step 3: CALCULATE FIBONACCI LEVELS
+   |
+   |--> 0%   = TP (Take Profit)
+   |--> 38.2%, 50%, 61.8% = Mid levels
+   |--> 71%  = Entry zone start
+   |--> 79%  = Entry zone end
+   |--> 100% = SL (Stop Loss)
+   |
+Step 4: WAIT FOR RETRACEMENT
+   |
+   |--> Price pulls back into 71-79% zone
+   |--> Place LIMIT ORDER at zone
+   |
+Step 5: OPTIONAL FILTERS
+   |
+   |--> Imbalance (IPA) check
+   |--> Liquidity Sweep check
+   |--> Confirmation candle
+   |
+Step 6: EXECUTE TRADE
+   |
+   |--> Entry: Limit order in 71-79% zone
+   |--> TP:   Fib 0% (previous swing)
+   |--> SL:   Fib 100% (opposite swing)
+   |--> Risk: 1% of account balance
+</div>
+
+<h2>2.2 Break of Structure (BOS) Detection</h2>
+<p>The BOS detector identifies when price breaks through a previous swing point, signaling a potential trend continuation or reversal setup.</p>
+
+<h3>Swing Point Detection</h3>
+<div class="info-box">
+  <strong>Swing High:</strong> high[i] is greater than the surrounding N candles (default N=5)<br>
+  <strong>Swing Low:</strong> low[i] is less than the surrounding N candles (default N=5)
+</div>
+
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>lookback</code></td><td>50</td><td>Number of bars to scan for swing points</td></tr>
+  <tr><td><code>swing_period</code></td><td>5</td><td>Bars on each side for swing confirmation</td></tr>
+</table>
+
+<h3>BOS Conditions</h3>
+<p><strong>Bullish BOS:</strong> Current candle closes above the most recent swing high.</p>
+<p><strong>Bearish BOS:</strong> Current candle closes below the most recent swing low.</p>
+
+<h2>2.3 Break of Market Structure (BMS) Detection</h2>
+<p>BMS is a stricter variant requiring momentum confirmation:</p>
+
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>swing_lookback</code></td><td>5</td><td>Window for swing point detection</td></tr>
+  <tr><td><code>momentum_candles</code></td><td>3</td><td>Minimum consecutive candles in direction</td></tr>
+  <tr><td><code>body_threshold</code></td><td>0.60</td><td>Body must be >= 60% of candle range</td></tr>
+  <tr><td><code>distance_atr</code></td><td>0.5</td><td>Minimum break distance in ATR multiples</td></tr>
+</table>
+
+<div class="highlight">
+  <strong>Momentum Validation:</strong> At least 3 consecutive candles must move in the same direction,
+  each with body >= 60% of the total range. The break distance must exceed 0.5 * ATR(14).
+</div>
+
+<h2>2.4 Extremum Tracking (BMS Strategy)</h2>
+<p>After BMS is detected, the system tracks the highest high (bullish) or lowest low (bearish) until price
+retraces back through the BMS level. This confirmed extremum becomes the Fibonacci anchor point.</p>
+
+<div class="diagram">
+BULLISH EXAMPLE:
+1. BMS detected (close > swing_high at 43,250)
+2. Price continues up to 43,850 (track highest high)
+3. Price drops back below 43,250 (BMS level)
+4. Confirmed extremum = 43,850
+5. Fibonacci: swing_low (42,800) --> 43,850
+</div>
+
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>min_candles</code></td><td>1</td><td>Minimum candles before confirmation</td></tr>
+  <tr><td><code>timeout_candles</code></td><td>50</td><td>Maximum candles to wait for confirmation</td></tr>
+</table>
+
+<h2>2.5 Fibonacci Level Calculation</h2>
+<h3>Standard Retracement Levels</h3>
+<table>
+  <tr><th>Level</th><th>Formula</th><th>Purpose</th></tr>
+  <tr><td>0.0%</td><td>Swing High (BUY) / Swing Low (SELL)</td><td>Take Profit</td></tr>
+  <tr><td>23.6%</td><td>High - Range * 0.236</td><td>Shallow retracement</td></tr>
+  <tr><td>38.2%</td><td>High - Range * 0.382</td><td>Aggressive entry zone</td></tr>
+  <tr><td>50.0%</td><td>High - Range * 0.500</td><td>Mid retracement</td></tr>
+  <tr><td>61.8%</td><td>High - Range * 0.618</td><td>Golden ratio zone</td></tr>
+  <tr><td>71.0%</td><td>High - Range * 0.710</td><td>CP 2.0 entry zone start</td></tr>
+  <tr><td>78.6%</td><td>High - Range * 0.786</td><td>Deep retracement / SL area</td></tr>
+  <tr><td>100%</td><td>Swing Low (BUY) / Swing High (SELL)</td><td>Stop Loss</td></tr>
+</table>
+
+<h3>Fibonacci Extensions (BMS Strategy)</h3>
+<table>
+  <tr><th>Level</th><th>Purpose</th><th>Position %</th></tr>
+  <tr><td>1.27x</td><td>TP2 (Extension 127%)</td><td>33% of position</td></tr>
+  <tr><td>1.62x</td><td>TP3 (Extension 162%)</td><td>34% of position</td></tr>
+</table>
+
+<h2>2.6 Entry Zone Logic</h2>
+<p>Entry zones define where limit orders are placed:</p>
+
+<table>
+  <tr><th>Zone</th><th>Fib Range</th><th>Style</th><th>Best Pairs</th></tr>
+  <tr><td><strong>CP 2.0 Original</strong></td><td>71-79%</td><td>Conservative</td><td>AUDUSD, NZDUSD, GBPUSD</td></tr>
+  <tr><td>Conservative</td><td>62-71%</td><td>Moderate</td><td>NZDUSD</td></tr>
+  <tr><td>Balanced</td><td>50-62%</td><td>Moderate</td><td>AUDUSD</td></tr>
+  <tr><td>Aggressive</td><td>38-50%</td><td>Early entry</td><td>USDJPY, USDCAD, EURUSD</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>Risk:Reward by Entry Zone:</strong><br>
+  Entry at 50% Fib: R:R = 1:1 (50 pips TP / 50 pips SL)<br>
+  Entry at 62% Fib: R:R = 1.6:1 (62 pips TP / 38 pips SL)<br>
+  Entry at 71% Fib: R:R = 2.5:1 (71 pips TP / 29 pips SL)<br>
+  Entry at 79% Fib: R:R = 3.8:1 (79 pips TP / 21 pips SL)
+</div>
+
+<h3>LONG (Buy) Position</h3>
+<div class="diagram">
+Price
+  |
+  |                              TP = 0% (Swing High)
+  |                              |    (Take Profit)
+  |                         /-----+-----\
+  |                    /---/   38.2%     \---\
+  |               /---/    |    50%       |   \---\
+  |          /---/         |    61.8%     |        \---\
+  |     /---/              |    71% <-----+--- ENTRY ZONE
+  |/---/                   |    79% <-----/   (wait for retracement)
+  |                        |    100% = SL (Stop Loss)
+  |                        |         (Swing Low)
+  +---------------------------------------------> Time
+
+LOGIC:
+1. Price rises from Swing Low to Swing High (impulse move)
+2. BOS - price breaks Swing High and closes ABOVE
+3. Wait for pullback (retracement) to 71-79% zone
+4. Entry: BUY LIMIT in the zone
+5. TP = Swing High (0%), SL = Swing Low (100%)
+</div>
+
+<h3>SHORT (Sell) Position</h3>
+<div class="diagram">
+Price
+  |
+  |100% = SL (Stop Loss)
+  |     (Swing High)
+  |\---\
+  |     \---\  79% <----+
+  |          \---\ 71% <-+--- ENTRY ZONE
+  |               \---\ |   (wait for retracement)
+  |                    \+---\  61.8%
+  |                         \---\  50%
+  |                              \---\  38.2%
+  |                                   \---\
+  |                                        \---+--- TP = 0% (Swing Low)
+  |                                            |    (Take Profit)
+  +--------------------------------------------+---------> Time
+
+LOGIC:
+1. Price falls from Swing High to Swing Low (impulse move)
+2. BOS - price breaks Swing Low and closes BELOW
+3. Wait for pullback (retracement) to 71-79% zone
+4. Entry: SELL LIMIT in the zone
+5. TP = Swing Low (0%), SL = Swing High (100%)
+</div>
+
+<h2>2.7 Liquidity Sweep Detection</h2>
+<p>A liquidity sweep occurs when price briefly pushes beyond a key level (triggering stop losses)
+before reversing. This is detected via wick-to-body ratio analysis.</p>
+
+<div class="diagram">
+BULLISH SWEEP EXAMPLE:
+
+        +---+
+        |   |  <-- Body = 10
+        |   |
+    +---+---+---+
+    |           | <-- Lower Wick = 25
+    +-----------+
+
+    Wick Ratio = 25 / 10 = 2.5x  (VALID)
+</div>
+
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>min_wick_to_body_ratio</code></td><td>2.0</td><td>Minimum wick/body ratio for sweep detection</td></tr>
+  <tr><td><code>ideal_wick_to_body_ratio</code></td><td>3.0</td><td>Ideal ratio for high-confidence sweeps</td></tr>
+</table>
+
+<p><strong>Bullish Sweep:</strong> Lower wick >= 2x body size, with price closing above the Fib 62% level.</p>
+<p><strong>Bearish Sweep:</strong> Upper wick >= 2x body size, with price closing below the Fib 62% level.</p>
+
+<h2>2.8 Confirmation Candle</h2>
+<p>After a liquidity sweep, the system waits for a confirmation candle:</p>
+<ul>
+  <li><strong>Direction:</strong> Must align with the BOS/BMS direction (green for bullish, red for bearish)</li>
+  <li><strong>Body size:</strong> Body >= 50% of the total candle range</li>
+</ul>
+
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>body_percent</code></td><td>0.50</td><td>Minimum body as % of range</td></tr>
+</table>
+
+<!-- CHAPTER 3: ENTRY FILTERS -->
+<h1 class="page-break">3. Entry Filters</h1>
+
+<h2>3.1 Imbalance (IPA) Filter</h2>
+<p>Detects price gaps (Imbalance/Imbalance Price Action) between candles, indicating strong directional momentum.</p>
+
+<div class="diagram">
+BEARISH IMBALANCE:
+
+   Candle 1        Candle 2       Candle 3
+      |               |               |
+      v               v               v
+   +---+           +---+           +---+
+   |   |           |   |           |   |
+   |   |           |   |           |   |
+   +---+           +---+           +---+
+      |-------GAP-------|
+      Low          >     High    <-- GAP exists = BEARISH
+</div>
+
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>enable_imbalance</code></td><td>false</td><td>Enable/disable IPA filter</td></tr>
+  <tr><td><code>min_imbalance_pips</code></td><td>5.0</td><td>Minimum gap size in pips</td></tr>
+</table>
+
+<h2>3.2 Trend Filter (EMA 50/200)</h2>
+<p>Confirms that the trade direction aligns with the overall trend.</p>
+
+<table>
+  <tr><th>Direction</th><th>Condition</th></tr>
+  <tr><td>Bullish</td><td>EMA(50) > EMA(200) - Uptrend</td></tr>
+  <tr><td>Bearish</td><td>EMA(50) < EMA(200) - Downtrend</td></tr>
+</table>
+
+<div class="info-box">
+  <strong>When to enable:</strong> Trend following strategies, longer timeframes (H1, H4), beginner traders.<br>
+  <strong>When to disable:</strong> Scalping, mean reversion, consolidation markets.
+</div>
+
+<h2>3.3 Volume Filter</h2>
+<p>Ensures sufficient trading volume to validate the move.</p>
+<pre><code>Condition: Current Volume > Average Volume (20 periods)</code></pre>
+
+<h2>3.4 Volatility Filter (ATR)</h2>
+<p>Avoids trading in low-volatility periods.</p>
+<pre><code>Condition: ATR(14) > Average ATR(20)</code></pre>
+
+<h2>3.5 Risk:Reward Filter</h2>
+<p>Ensures every trade meets a minimum reward-to-risk ratio.</p>
+<pre><code>R:R = (TP - Entry) / (Entry - SL)
+Example: Entry=100, SL=98, TP=104 -> R:R = 4/2 = 2:1</code></pre>
+
+<table>
+  <tr><th>Preset</th><th>Min R:R</th></tr>
+  <tr><td>Conservative</td><td>2.5:1</td></tr>
+  <tr><td>Balanced</td><td>2.0:1</td></tr>
+  <tr><td>Aggressive</td><td>1.5:1</td></tr>
+</table>
+
+<h2>3.6 Filter Decision Matrix</h2>
+<table>
+  <tr><th>Situation</th><th>Trend</th><th>Volume</th><th>Volatility</th><th>R:R</th></tr>
+  <tr><td>Beginner</td><td>ON</td><td>ON</td><td>ON</td><td>ON (2.5)</td></tr>
+  <tr><td>Experienced</td><td>ON</td><td>ON</td><td>ON</td><td>ON (2.0)</td></tr>
+  <tr><td>Scalping</td><td>OFF</td><td>ON</td><td>OFF</td><td>ON (1.5)</td></tr>
+  <tr><td>Trend Following</td><td>ON</td><td>ON</td><td>ON</td><td>ON (2.5)</td></tr>
+  <tr><td>Choppy Market</td><td>ON</td><td>OFF</td><td>ON</td><td>ON (2.0)</td></tr>
+</table>
+
+<!-- CHAPTER 4: RISK MANAGEMENT -->
+<h1 class="page-break">4. Risk Management</h1>
+
+<h2>4.1 Position Sizing</h2>
+<p>Position size is calculated automatically based on account balance, risk percentage, and stop loss distance:</p>
+<pre><code>Lot Size = (Account Balance * Risk%) / (SL Distance in pips * Pip Value)
+
+Example:
+  Balance: $10,000
+  Risk: 1%
+  SL Distance: 50 pips
+  Pip Value: $10 (standard lot)
+
+  Lot = ($10,000 * 0.01) / (50 * $10) = 0.02 lots</code></pre>
+
+<h2>4.2 Stop Loss Placement</h2>
+<p>SL is placed at Fibonacci 100% level with an optional buffer to avoid stop hunting:</p>
+<pre><code>BULLISH: SL = Fib 100% * (1 - buffer%)
+BEARISH: SL = Fib 100% * (1 + buffer%)
+
+Default buffer: 0.1%</code></pre>
+
+<h2>4.3 Take Profit Levels</h2>
+<h3>CP 2.0 (Single TP)</h3>
+<table>
+  <tr><th>Level</th><th>Position %</th></tr>
+  <tr><td>TP at Fib 0%</td><td>100%</td></tr>
+</table>
+
+<h3>BMS Strategy (3 TPs)</h3>
+<table>
+  <tr><th>TP Level</th><th>Fibonacci Level</th><th>Position %</th><th>Description</th></tr>
+  <tr><td>TP1</td><td>Fib 0% (previous high/low)</td><td>33%</td><td>Conservative first target</td></tr>
+  <tr><td>TP2</td><td>Fib 1.27 extension</td><td>33%</td><td>Extension target</td></tr>
+  <tr><td>TP3</td><td>Fib 1.62 extension</td><td>34%</td><td>Deep extension target</td></tr>
+</table>
+
+<h2>4.4 Daily Limits</h2>
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>risk_percent</code></td><td>1.0%</td><td>Risk per trade</td></tr>
+  <tr><td><code>correlated_risk_percent</code></td><td>0.5%</td><td>Risk for correlated pairs</td></tr>
+  <tr><td><code>max_daily_trades</code></td><td>3</td><td>Maximum trades per day</td></tr>
+  <tr><td><code>max_open_positions</code></td><td>2</td><td>Maximum simultaneous positions</td></tr>
+</table>
+
+<h2>4.5 Correlation Handling</h2>
+<p>The system reduces risk on correlated currency pairs:</p>
+<table>
+  <tr><th>Base Currency</th><th>Correlated Pairs</th></tr>
+  <tr><td>EUR</td><td>EURUSD, EURGBP, EURJPY, EURAUD</td></tr>
+  <tr><td>GBP</td><td>GBPUSD, EURGBP, GBPJPY, GBPAUD</td></tr>
+  <tr><td>USD</td><td>EURUSD, GBPUSD, USDJPY, USDCAD</td></tr>
+  <tr><td>JPY</td><td>USDJPY, EURJPY, GBPJPY, AUDJPY</td></tr>
+  <tr><td>AUD</td><td>AUDUSD, EURAUD, GBPAUD, AUDJPY</td></tr>
+  <tr><td>CAD</td><td>USDCAD, CADJPY, GBPCAD, AUDCAD</td></tr>
+  <tr><td>NZD</td><td>NZDUSD, NZDJPY, GBPNZD, AUDNZD</td></tr>
+</table>
+<p>When trading correlated pairs simultaneously, risk is reduced from 1.0% to 0.5% per trade.</p>
+
+<!-- CHAPTER 5: POSITION VISUALIZATION -->
+<h1 class="page-break">5. Position Visualization</h1>
+
+<h2>5.1 Entry Flow Diagram</h2>
+<div class="diagram">
+                    STEP 1: Detect BOS
+                    ====================
+                           |
+                           v
+        +---------------------------------+
+        |  BOS BULLISH (close > swing)  |--> LOOK FOR BUY
+        |  BOS BEARISH (close < swing)  |--> LOOK FOR SELL
+        +---------------------------------+
+                           |
+                           v
+                    STEP 2: Find Swing Points
+                    =========================
+                           |
+        +------------------+------------------+
+        |  For SELL:                          |
+        |  * Swing High = highest point       |
+        |  * Swing Low = lowest point         |
+        |    (before BOS)                     |
+        |                                     |
+        |  For BUY:                           |
+        |  * Swing Low = lowest point         |
+        |  * Swing High = highest point       |
+        |    (before BOS)                     |
+        +-------------------------------------+
+                           |
+                           v
+                    STEP 3: Calculate Fibonacci
+                    ===========================
+                           |
+        +------------------------------------------+
+        |  100% --- SL (Stop Loss)                |
+        |   79% --- upper entry zone boundary     |
+        |   71% --- middle of entry zone          |
+        |   62% ---                               |
+        |   50% --- BEST ENTRY ZONE               |
+        |   38% ---                               |
+        |    0% --- TP (Take Profit)              |
+        +------------------------------------------+
+                           |
+                           v
+                    STEP 4: Place Order
+                    ===================
+                           |
+        +------------------+------------------+
+        |                                     |
+        |  SELL LIMIT @ 71-79%                |
+        |  +-- TP = Swing Low (0%)            |
+        |  +-- SL = Swing High (100%)         |
+        |                                     |
+        |  BUY LIMIT @ 71-79%                 |
+        |  +-- TP = Swing High (0%)           |
+        |  +-- SL = Swing Low (100%)          |
+        |                                     |
+        +-------------------------------------+
+</div>
+
+<h2>5.2 Real Example - EURUSD Sell Setup</h2>
+<div class="diagram">
+        Swing High =============================== 1.09577 (SL)
+                    \                              |
+                     \    Entry Zone -------------+--- 1.09472-1.09517 (62-50%)
+                      \        ^                   |
+                       \       | RETRACEMENT       |
+                        \      | (price pullback)  |
+                         \     v                   |
+                          \------------------------+--- BOS detected
+                           \                       |
+                            \----------------------+--- 1.09349 (TP = Swing Low)
+                                                   |
+
+        POSITION DETAILS:
+        * Entry: SELL LIMIT @ 1.09472-1.09517
+        * TP: 1.09349 (swing low = 0%)
+        * SL: 1.09577 (swing high = 100%)
+        * Risk:Reward = 1:2.5 (when entering at 50%)
+        * Risk: 1% of account capital
+</div>
+
+<!-- CHAPTER 6: GRID ORDER SYSTEM -->
+<h1 class="page-break">6. Grid Order System</h1>
+
+<p>The BMS strategy supports grid orders - multiple limit orders distributed across the Fibonacci entry zone for better average entry price.</p>
+
+<h2>6.1 Grid Configuration</h2>
+<table>
+  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>enable_grid</code></td><td>true</td><td>Enable grid orders</td></tr>
+  <tr><td><code>grid_count</code></td><td>5</td><td>Number of orders in the grid</td></tr>
+  <tr><td><code>grid_spacing</code></td><td>equal</td><td>Spacing mode: equal, fib, custom</td></tr>
+</table>
+
+<h2>6.2 Spacing Modes</h2>
+<table>
+  <tr><th>Mode</th><th>Description</th><th>Example (5 orders in 62-71% zone)</th></tr>
+  <tr><td><code>equal</code></td><td>Equal distance between orders</td><td>62%, 64.25%, 66.5%, 68.75%, 71%</td></tr>
+  <tr><td><code>fib</code></td><td>Fibonacci-based spacing</td><td>Denser near deeper levels</td></tr>
+  <tr><td><code>custom</code></td><td>User-defined levels</td><td>Custom array of Fib levels</td></tr>
+</table>
+
+<h2>6.3 Risk Distribution</h2>
+<p>Risk is distributed evenly across all grid orders. Each order carries (total_risk / grid_count) risk.
+When multiple orders fill, the system tracks the average entry price and adjusts TP/SL accordingly.</p>
+
+<!-- CHAPTER 7: ARCHITECTURE -->
+<h1 class="page-break">7. Architecture &amp; Project Structure</h1>
+
+<h2>7.1 Directory Layout</h2>
+<pre><code>Fibo_71/
+├── src/                          # Python implementation (MetaTrader 5)
+│   ├── main.py                   # Entry point - CP 2.0 strategy
+│   ├── main_bms.py               # Entry point - BMS strategy
+│   ├── strategies/
+│   │   ├── fibo71_strategy.py    # CP2Strategy - main trading logic
+│   │   └── bms_fibo_liquidity_strategy.py  # BMS strategy with state machine
+│   ├── indicators/
+│   │   ├── bos.py                # BOSDetector - swing points & break detection
+│   │   ├── bms_detector.py       # BMSDetector - momentum-based BMS
+│   │   ├── fibonacci.py          # FibonacciCalculator - standard levels
+│   │   ├── fibonacci_extended.py # FibonacciExtendedCalculator - with extensions
+│   │   ├── liquidity_sweep.py    # LiquiditySweepDetector
+│   │   └── filters.py            # Trend, Volume, Volatility, R:R filters
+│   ├── risk/
+│   │   └── manager.py            # RiskManager - 1% rule, correlation handling
+│   ├── utils/
+│   │   ├── mt5_utils.py          # MT5 connection, orders, positions
+│   │   ├── telegram.py           # TelegramNotifier - CP 2.0 alerts
+│   │   ├── telegram_bms.py       # TelegramNotifier - BMS alerts
+│   │   └── grid_manager.py       # GridOrderManager - multi-order support
+│   └── config/
+│       └── loader.py             # JSON config loading
+├── mt5/
+│   └── Fibo71_CP2_Bot_v3.mq5    # MQL5 Expert Advisor (standalone)
+├── pine/
+│   └── Fibo71_CP2_Strategy.pine  # TradingView indicator (Pine Script v5)
+├── config/
+│   ├── settings.example.json     # CP 2.0 configuration template
+│   └── bms_settings.json         # BMS strategy configuration
+├── docs/
+│   ├── FIBO71_CP2_DOCUMENTATION.pdf  # This document
+│   ├── BACKTEST_RESULTS.md       # Detailed backtest results
+│   └── POZYCJE_DIAGRAM.md        # Position visualization diagrams
+├── deploy/
+│   └── DEPLOY_VPS_HOSTINGER.md   # VPS deployment guide
+└── requirements.txt              # Python dependencies
+</code></pre>
+
+<h2>7.2 Python Implementation Details</h2>
+
+<h3>CP2Strategy (<code>src/strategies/fibo71_strategy.py</code>)</h3>
+<p>Main orchestrator that:</p>
+<ol>
+  <li>Calls <code>BOSDetector.detect_bos()</code> to find setups</li>
+  <li>Calculates Fibonacci levels via <code>FibonacciCalculator</code></li>
+  <li>Checks risk with <code>RiskManager.can_open_trade()</code></li>
+  <li>Creates <code>TradeSetup</code> dataclass with entry/SL/TP</li>
+  <li>Places limit orders via MT5 API</li>
+</ol>
+
+<h3>BMSFiboLiquidityStrategy (<code>src/strategies/bms_fibo_liquidity_strategy.py</code>)</h3>
+<p>State machine-based strategy with the following states:</p>
+<pre><code>IDLE --> BMS_DETECTED --> TRACKING_EXTREMUM --> EXTREMUM_CONFIRMED
+  |                                                     |
+  |--> IN_FIB_ZONE --> SWEEP_DETECTED --> IN_TRADE       |
+  |                                                     |
+  +-----------------------------------------------------+</code></pre>
+
+<h3>BOSDetector (<code>src/indicators/bos.py</code>)</h3>
+<ul>
+  <li><code>_find_swings()</code> - Finds swing highs/lows (configurable period)</li>
+  <li><code>_check_imbalance()</code> - Detects IPA (gap between candle 1 and 3)</li>
+  <li><code>_check_liquidity()</code> - Detects false breakout before BOS</li>
+  <li>Returns <code>BOSResult</code> dataclass with direction, swing points, confidence</li>
+</ul>
+
+<h3>RiskManager (<code>src/risk/manager.py</code>)</h3>
+<ul>
+  <li>1% risk per trade, 0.5% on correlated pairs</li>
+  <li><code>CORRELATION_GROUPS</code> dict maps currencies to correlated pairs</li>
+  <li><code>calculate_lot_size()</code> based on SL distance and risk %</li>
+  <li>Max daily trades and open positions limits</li>
+</ul>
+
+<h2>7.3 MQL5 Expert Advisor</h2>
+<p><strong>File:</strong> <code>mt5/Fibo71_CP2_Bot_v3.mq5</strong></p>
+<p>A standalone MetaTrader 5 Expert Advisor with identical logic to the Python version, requiring no external Python installation.</p>
+
+<h3>Input Parameters</h3>
+<table>
+  <tr><th>Group</th><th>Parameters</th></tr>
+  <tr><td>Basic Settings</td><td>Magic number, trade comment</td></tr>
+  <tr><td>Risk Management</td><td>Risk %, fixed lots, daily limits</td></tr>
+  <tr><td>Fibonacci</td><td>Entry zones (71-79%), TP/SL levels</td></tr>
+  <tr><td>BOS Detection</td><td>Lookback period, swing confirmation</td></tr>
+  <tr><td>ATR Settings</td><td>Dynamic SL, imbalance detection</td></tr>
+  <tr><td>Entry Filters</td><td>Imbalance, liquidity sweep, spread filter</td></tr>
+  <tr><td>Grid Orders</td><td>Enable/disable, count, spacing mode</td></tr>
+  <tr><td>Exit Management</td><td>Daily close, partial close</td></tr>
+  <tr><td>Telegram</td><td>Bot token, chat ID</td></tr>
+  <tr><td>Display</td><td>Show/hide Fibonacci lines, zones, labels</td></tr>
+</table>
+
+<h2>7.4 Pine Script Indicator</h2>
+<p><strong>File:</strong> <code>pine/Fibo71_CP2_Strategy.pine</code></p>
+<p>TradingView indicator for visual analysis with:</p>
+<ul>
+  <li>BOS detection with on-chart labels</li>
+  <li>Fibonacci level drawing (all standard levels)</li>
+  <li>Entry zone highlighting</li>
+  <li>Setup expiration tracking</li>
+  <li>Multiple active setups support</li>
+  <li>Webhook alert conditions for automated notifications</li>
+</ul>
+
+<!-- CHAPTER 8: CONFIGURATION -->
+<h1 class="page-break">8. Configuration</h1>
+
+<h2>8.1 Complete Settings Reference</h2>
+<pre><code>{
+  "trading": {
+    "symbol": "AUDUSD",
+    "timeframe": "H1",
+    "magic_number": 710071,
+    "trade_comment": "Fibo71_CP2"
+  },
+  "risk": {
+    "risk_percent": 1.0,
+    "correlated_risk_percent": 0.5,
+    "max_daily_trades": 3,
+    "max_open_positions": 2
+  },
+  "strategy": {
+    "entry_zone": "71-79",
+    "fib_min": 0.71,
+    "fib_max": 0.79,
+    "fib_tp": 0.0,
+    "fib_sl": 1.0,
+    "bos_lookback": 50,
+    "min_range_pips": 30,
+    "entry_zones": {
+      "aggressive":    {"min": 0.38, "max": 0.50},
+      "balanced":      {"min": 0.50, "max": 0.62},
+      "conservative":  {"min": 0.62, "max": 0.71},
+      "cp20_original": {"min": 0.71, "max": 0.79}
+    }
+  },
+  "filters": {
+    "enable_imbalance": false,
+    "enable_liquidity_sweep": false,
+    "enable_trend": true,
+    "enable_volume": true,
+    "enable_volatility": true,
+    "enable_rr": true,
+    "min_rr_ratio": 2.0,
+    "trading_hours": {
+      "start": "08:00",
+      "end": "20:00"
+    }
+  },
+  "telegram": {
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": ""
+  }
+}</code></pre>
+
+<h2>8.2 Configuration Presets</h2>
+
+<h3>Preset 1: Conservative (Beginners)</h3>
+<div class="success-box">
+  <strong>For:</strong> New traders, demo testing, small accounts<br>
+  <strong>Risk:</strong> 0.5% per trade | Max 2 daily trades | All filters ON
+</div>
+<pre><code>{
+  "risk": { "risk_percent": 0.5, "max_daily_trades": 2 },
+  "bms": { "momentum_candles": 3, "body_threshold": 0.60 },
+  "liquidity_sweep": { "min_wick_ratio": 2.5 },
+  "confirmation": { "body_percent": 0.60 },
+  "sl": { "buffer_percent": 0.15 },
+  "filters": {
+    "enable_trend": true,
+    "enable_volume": true,
+    "enable_volatility": true,
+    "enable_rr": true,
+    "min_rr_ratio": 2.5
+  }
+}</code></pre>
+
+<h3>Preset 2: Balanced (Recommended)</h3>
+<div class="info-box">
+  <strong>For:</strong> Experienced traders, standard accounts<br>
+  <strong>Risk:</strong> 1.0% per trade | Max 3 daily trades | Most filters ON
+</div>
+<pre><code>{
+  "risk": { "risk_percent": 1.0, "max_daily_trades": 3 },
+  "bms": { "momentum_candles": 3, "body_threshold": 0.60 },
+  "liquidity_sweep": { "min_wick_ratio": 2.0 },
+  "confirmation": { "body_percent": 0.50 },
+  "sl": { "buffer_percent": 0.1 },
+  "filters": {
+    "enable_trend": true,
+    "enable_volume": true,
+    "enable_volatility": true,
+    "enable_rr": true,
+    "min_rr_ratio": 2.0
+  }
+}</code></pre>
+
+<h3>Preset 3: Aggressive (Experienced)</h3>
+<div class="warning-box">
+  <strong>For:</strong> Advanced traders, larger accounts<br>
+  <strong>Risk:</strong> 1.5% per trade | Max 5 daily trades | Fewer filters
+</div>
+<pre><code>{
+  "risk": { "risk_percent": 1.5, "max_daily_trades": 5 },
+  "bms": { "momentum_candles": 2, "body_threshold": 0.50 },
+  "liquidity_sweep": { "min_wick_ratio": 1.5 },
+  "confirmation": { "body_percent": 0.40 },
+  "sl": { "buffer_percent": 0.05 },
+  "filters": {
+    "enable_trend": true,
+    "enable_volume": false,
+    "enable_volatility": false,
+    "enable_rr": true,
+    "min_rr_ratio": 1.5
+  }
+}</code></pre>
+
+<!-- CHAPTER 9: BACKTEST RESULTS -->
+<h1 class="page-break">9. Backtest Results</h1>
+
+<h2>9.1 Methodology</h2>
+<table>
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Data Source</td><td>Yahoo Finance</td></tr>
+  <tr><td>Test Period</td><td>~2 years (March 2024 - March 2026)</td></tr>
+  <tr><td>H1 Candles</td><td>12,000+ per pair</td></tr>
+  <tr><td>D1 Candles</td><td>500+ per pair</td></tr>
+  <tr><td>Currency Pairs</td><td>EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, NZDUSD</td></tr>
+  <tr><td>Entry Zones</td><td>38-50%, 50-62%, 62-71%, 71-79%</td></tr>
+  <tr><td>Filters</td><td>BOS without required imbalance (relaxed)</td></tr>
+</table>
+
+<h2>9.2 H1 Day Trading Results - TOP 10</h2>
+<table>
+  <tr><th>#</th><th>Pair</th><th>Zone</th><th>Trades</th><th>Win Rate</th><th>Pips</th><th>Profit Factor</th><th>Rating</th></tr>
+  <tr><td>1</td><td><strong>AUDUSD</strong></td><td><strong>71-79%</strong></td><td>15</td><td>46.7%</td><td>+152.7</td><td><strong>2.48</strong></td><td>*****</td></tr>
+  <tr><td>2</td><td><strong>USDJPY</strong></td><td><strong>38-50%</strong></td><td>14</td><td>71.4%</td><td>+279.6</td><td><strong>2.10</strong></td><td>*****</td></tr>
+  <tr><td>3</td><td><strong>USDCAD</strong></td><td><strong>38-50%</strong></td><td>24</td><td>70.8%</td><td>+172.1</td><td><strong>1.63</strong></td><td>****</td></tr>
+  <tr><td>4</td><td><strong>EURUSD</strong></td><td><strong>38-50%</strong></td><td>15</td><td>46.7%</td><td>+49.9</td><td><strong>1.50</strong></td><td>****</td></tr>
+  <tr><td>5</td><td>NZDUSD</td><td>71-79%</td><td>12</td><td>33.3%</td><td>+43.0</td><td>1.37</td><td>***</td></tr>
+  <tr><td>6</td><td>NZDUSD</td><td>62-71%</td><td>3</td><td>33.3%</td><td>+40.7</td><td>1.26</td><td>***</td></tr>
+  <tr><td>7</td><td>AUDUSD</td><td>50-62%</td><td>24</td><td>45.8%</td><td>+75.5</td><td>1.23</td><td>***</td></tr>
+  <tr><td>8</td><td>USDJPY</td><td>71-79%</td><td>14</td><td>35.7%</td><td>+77.8</td><td>1.22</td><td>***</td></tr>
+  <tr><td>9</td><td>GBPUSD</td><td>71-79%</td><td>16</td><td>25.0%</td><td>+34.9</td><td>1.14</td><td>***</td></tr>
+  <tr><td>10</td><td>AUDUSD</td><td>38-50%</td><td>43</td><td>58.1%</td><td>+49.3</td><td>1.08</td><td>**</td></tr>
+</table>
+
+<h2>9.3 D1 Swing Trading Results</h2>
+<table>
+  <tr><th>#</th><th>Pair</th><th>Zone</th><th>Trades</th><th>Win Rate</th><th>Pips</th><th>Profit Factor</th></tr>
+  <tr><td>1</td><td><strong>EURUSD</strong></td><td><strong>38-50%</strong></td><td>4</td><td>75.0%</td><td>+117.8</td><td><strong>3.01</strong></td></tr>
+  <tr><td>2</td><td>GBPUSD</td><td>38-50%</td><td>2</td><td>100.0%</td><td>+473.1</td><td>999.00*</td></tr>
+  <tr><td>3</td><td>EURUSD</td><td>50-62%</td><td>4</td><td>50.0%</td><td>+49.9</td><td>1.50</td></tr>
+  <tr><td>4</td><td>NZDUSD</td><td>71-79%</td><td>3</td><td>33.3%</td><td>+107.0</td><td>1.91</td></tr>
+</table>
+<p style="font-size:9pt; color:#718096;">* Only 2 trades - statistically insignificant. Treat as anecdotal.</p>
+
+<h2>9.4 Zone Performance Analysis</h2>
+<table>
+  <tr><th>Zone</th><th>Avg Profit Factor</th><th>Avg Win Rate</th><th>Characteristics</th></tr>
+  <tr><td><strong>38-50%</strong></td><td><strong>1.53</strong></td><td><strong>59.2%</strong></td><td>Aggressive, earlier entry, more signals</td></tr>
+  <tr><td>50-62%</td><td>0.96</td><td>38.6%</td><td>Neutral, mixed results</td></tr>
+  <tr><td>62-71%</td><td>0.88</td><td>31.5%</td><td>Conservative, fewer signals</td></tr>
+  <tr><td><strong>71-79%</strong></td><td><strong>1.31</strong></td><td>34.5%</td><td>Deep retracement, high PF on select pairs</td></tr>
+</table>
+
+<div class="highlight">
+  <strong>Key Finding:</strong> The 38-50% zone produces the best average results across most pairs,
+  while the 71-79% zone excels specifically on AUDUSD and NZDUSD.
+</div>
+
+<h2>9.5 Configuration Recommendations</h2>
+<h3>Day Traders (H1)</h3>
+<pre><code>{
+  "symbol": "AUDUSD",
+  "timeframe": "H1",
+  "entry_zone": "71-79",
+  "fib_min": 0.71,
+  "fib_max": 0.79
+}
+
+Alternatives:
+  USDJPY + 38-50%  (PF 2.10, WR 71.4%)
+  USDCAD + 38-50%  (PF 1.63, 24 trades)</code></pre>
+
+<h3>Swing Traders (D1)</h3>
+<pre><code>{
+  "symbol": "EURUSD",
+  "timeframe": "D1",
+  "entry_zone": "38-50",
+  "fib_min": 0.38,
+  "fib_max": 0.50
+}</code></pre>
+
+<h3>Diversified Portfolio (3 pairs)</h3>
+<table>
+  <tr><th>Pair</th><th>Timeframe</th><th>Zone</th><th>Style</th></tr>
+  <tr><td>AUDUSD</td><td>H1</td><td>71-79%</td><td>Conservative</td></tr>
+  <tr><td>USDJPY</td><td>H1</td><td>38-50%</td><td>Aggressive</td></tr>
+  <tr><td>EURUSD</td><td>D1</td><td>38-50%</td><td>Swing</td></tr>
+</table>
+
+<!-- CHAPTER 10: TELEGRAM INTEGRATION -->
+<h1 class="page-break">10. Telegram Integration</h1>
+
+<h2>10.1 Setup Instructions</h2>
+<ol>
+  <li>Create a bot via <strong>@BotFather</strong> on Telegram - send <code>/newbot</code></li>
+  <li>Set bot name (e.g., "Fibo71_Signals") and username</li>
+  <li>Save the <strong>Bot Token</strong> provided by BotFather</li>
+  <li>Get your <strong>Chat ID</strong> from <strong>@userinfobot</strong></li>
+  <li>Configure token and chat ID in <code>settings.json</code></li>
+  <li>For MT5: whitelist <code>https://api.telegram.org</code> in Tools > Options > Expert Advisors</li>
+</ol>
+
+<h2>10.2 Notification Types</h2>
+<table>
+  <tr><th>#</th><th>Type</th><th>Icon</th><th>Description</th></tr>
+  <tr><td>1</td><td>BMS/BOS Detected</td><td>FIRE</td><td>Structure break identified</td></tr>
+  <tr><td>2</td><td>Extremum Confirmed</td><td>CHECK</td><td>Fibonacci calculated, ready for entry</td></tr>
+  <tr><td>3</td><td>Fib Zone Entered</td><td>PIN</td><td>Price in entry zone</td></tr>
+  <tr><td>4</td><td>Liquidity Sweep</td><td>DROP</td><td>Liquidity sweep detected</td></tr>
+  <tr><td>5</td><td>Trade Opened</td><td>ROCKET</td><td>Position opened with details</td></tr>
+  <tr><td>6</td><td>Trade Closed (TP)</td><td>MONEY</td><td>Take profit hit</td></tr>
+  <tr><td>7</td><td>Trade Closed (SL)</td><td>STOP</td><td>Stop loss hit</td></tr>
+  <tr><td>8</td><td>Filter Blocked</td><td>BLOCK</td><td>Trade blocked by filter</td></tr>
+  <tr><td>9</td><td>Daily Summary</td><td>CHART</td><td>End-of-day statistics</td></tr>
+  <tr><td>10</td><td>Error</td><td>WARNING</td><td>System error notification</td></tr>
+</table>
+
+<h2>10.3 Example Messages</h2>
+
+<h3>BMS Detected</h3>
+<pre><code>FIRE BMS DETECTED
+Symbol: BTCUSDT
+Direction: BULLISH
+BMS Level: 43,250.50
+Swing Low: 42,800.00
+
+Tracking extremum...</code></pre>
+
+<h3>Trade Opened</h3>
+<pre><code>ROCKET TRADE OPENED
+Symbol: BTCUSDT
+Direction: BUY
+Entry: 43,420.50
+SL: 42,757.20 (-1.53%)
+TP1: 43,850.00 (+0.99%)
+TP2: 44,100.00
+TP3: 44,350.00
+
+R:R: 1:2.1
+Lot: 0.15
+Risk: 1.0%</code></pre>
+
+<!-- CHAPTER 11: VPS DEPLOYMENT -->
+<h1 class="page-break">11. VPS Deployment Guide</h1>
+
+<h2>11.1 Requirements</h2>
+<table>
+  <tr><th>Component</th><th>Minimum</th><th>Recommended</th></tr>
+  <tr><td>VPS RAM</td><td>2 GB</td><td>4 GB</td></tr>
+  <tr><td>VPS CPU</td><td>2 vCPU</td><td>4 vCPU</td></tr>
+  <tr><td>OS</td><td>Windows Server 2019+</td><td>Windows Server 2022</td></tr>
+  <tr><td>Alternative OS</td><td>Ubuntu 20.04+ (with Wine)</td><td>Windows (recommended)</td></tr>
+  <tr><td>Broker</td><td>Any MT5 broker with API access</td><td>Low spread broker</td></tr>
+</table>
+
+<h2>11.2 Windows VPS Deployment (Recommended)</h2>
+<ol>
+  <li><strong>Connect via RDP</strong> to your VPS</li>
+  <li><strong>Install MT5</strong> from your broker's website</li>
+  <li><strong>Configure MT5:</strong>
+    <ul>
+      <li>Enable Auto Trading (Ctrl+E)</li>
+      <li>Tools > Options > Expert Advisors:
+        <ul>
+          <li>Allow automated trading</li>
+          <li>Allow DLL imports</li>
+          <li>Allow WebRequest for <code>api.telegram.org</code></li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li><strong>Deploy EA:</strong>
+    <ul>
+      <li>Copy <code>Fibo71_CP2_Bot_v3.mq5</code> to MT5 Experts folder</li>
+      <li>Compile in MetaEditor (F7)</li>
+      <li>Attach to chart with your symbol and timeframe</li>
+    </ul>
+  </li>
+  <li><strong>Configure parameters:</strong> Set symbol, risk %, entry zone, Telegram credentials</li>
+  <li><strong>Test:</strong> Run on demo for at least 48 hours before going live</li>
+</ol>
+
+<h2>11.3 Ubuntu VPS Deployment (Alternative)</h2>
+<ol>
+  <li>Install Wine: <code>sudo apt install wine64</code></li>
+  <li>Install MT5 via Wine</li>
+  <li>Install Python: <code>sudo apt install python3 python3-pip</code></li>
+  <li>Clone repository and install dependencies: <code>pip install -r requirements.txt</code></li>
+  <li>Configure settings.json</li>
+  <li>Run: <code>python src/main.py --demo</code></li>
+</ol>
+
+<h2>11.4 Security Checklist</h2>
+<ul>
+  <li>Change default SSH port</li>
+  <li>Enable firewall (UFW on Linux, Windows Firewall)</li>
+  <li>Use strong passwords</li>
+  <li>Disable unnecessary services</li>
+  <li>Set up daily backups</li>
+  <li>Monitor EA status with health check scripts</li>
+</ul>
+
+<!-- CHAPTER 12: CLI REFERENCE -->
+<h1 class="page-break">12. CLI Reference</h1>
+
+<h2>12.1 CP 2.0 Strategy</h2>
+<pre><code># Show help
+python src/main.py --help
+
+# Run backtest
+python src/main.py --backtest
+
+# Run demo (paper trading)
+python src/main.py --demo
+
+# Run live (CAUTION!)
+python src/main.py --live
+
+# Custom config
+python src/main.py --demo --config config/settings.json
+
+# Set log level
+python src/main.py --demo --log-level DEBUG</code></pre>
+
+<h2>12.2 BMS Strategy</h2>
+<pre><code># Backtest (last 3 months)
+python src/main_bms.py --backtest --days 90
+
+# Backtest with custom config
+python src/main_bms.py --backtest --config config/conservative.json
+
+# Demo mode (paper trading)
+python src/main_bms.py --demo
+
+# Live mode (CAUTION!)
+python src/main_bms.py --live
+
+# Disable specific filters
+python src/main_bms.py --demo --no-volume-filter --no-volatility-filter
+
+# Debug mode
+python src/main_bms.py --demo --log-level DEBUG
+
+# Specify symbol and timeframe
+python src/main_bms.py --backtest --symbol ETHUSDT --timeframe H1</code></pre>
+
+<h2>12.3 Python Dependencies</h2>
+<pre><code># Core
+python-dotenv >= 1.0.0
+pydantic >= 2.0.0
+
+# Trading
+MetaTrader5 >= 5.0.45
+pandas >= 2.0.0
+numpy >= 1.24.0
+
+# Backtesting
+backtrader >= 1.9.76
+vectorbt >= 0.26.0
+
+# Notifications
+requests >= 2.31.0
+
+# Testing
+pytest >= 7.4.0
+
+# Logging
+loguru >= 0.7.0</code></pre>
+
+<!-- CHAPTER 13: CHECKLIST -->
+<h1 class="page-break">13. Pre-Launch Checklist</h1>
+
+<h2>13.1 Configuration</h2>
+<ul>
+  <li>Set <code>symbol</code> to the correct instrument (e.g., AUDUSD)</li>
+  <li>Choose <code>timeframe</code> (H1 recommended for day trading, D1 for swing)</li>
+  <li>Set <code>risk_percent</code> (0.5-1.0% for beginners, max 1.5% for experienced)</li>
+  <li>Choose entry zone based on pair (see backtest recommendations)</li>
+  <li>Configure filters based on experience level</li>
+</ul>
+
+<h2>13.2 Telegram (Optional)</h2>
+<ul>
+  <li>Create bot via @BotFather</li>
+  <li>Get Chat ID from @userinfobot</li>
+  <li>Fill in <code>bot_token</code> and <code>chat_id</code> in config</li>
+  <li>Set <code>enabled: true</code></li>
+  <li>For MT5: whitelist <code>api.telegram.org</code></li>
+  <li>Test by sending a message to the bot</li>
+</ul>
+
+<h2>13.3 Testing</h2>
+<ul>
+  <li>Run backtest: <code>python src/main.py --backtest</code></li>
+  <li>Check logs in the <code>logs/</code> directory</li>
+  <li>Run demo: <code>python src/main.py --demo</code></li>
+  <li>Test for minimum <strong>48 hours</strong> on demo</li>
+  <li>Verify Telegram notifications arrive</li>
+  <li>Check FTMO limits trigger correctly (if applicable)</li>
+</ul>
+
+<h2>13.4 Going Live</h2>
+<ul>
+  <li>Demo tested for at least <strong>1 week</strong></li>
+  <li>Verified positive expectancy (Profit Factor > 1.5)</li>
+  <li>Max drawdown < 10% on demo</li>
+  <li>Start with reduced risk (0.25-0.5%)</li>
+  <li>Monitor first 10 live trades closely</li>
+</ul>
+
+<!-- CHAPTER 14: DISCLAIMERS -->
+<h1 class="page-break">14. Limitations &amp; Disclaimers</h1>
+
+<h2>14.1 Known Limitations</h2>
+<table>
+  <tr><th>Limitation</th><th>Impact</th><th>Mitigation</th></tr>
+  <tr><td>Yahoo Finance data</td><td>May have gaps and inaccuracies</td><td>Verify with broker data</td></tr>
+  <tr><td>No spread modeling</td><td>Real results will be lower</td><td>Use broker spread data</td></tr>
+  <tr><td>No slippage modeling</td><td>Real execution will differ</td><td>Forward test on demo</td></tr>
+  <tr><td>Curve fitting risk</td><td>Historical performance != future</td><td>Out-of-sample testing</td></tr>
+  <tr><td>No news filter</td><td>Volatile events can cause losses</td><td>Avoid trading during news</td></tr>
+  <tr><td>MT5 Windows only</td><td>Python MT5 package requires Windows</td><td>Use Wine on Linux or VPS</td></tr>
+</table>
+
+<h2>14.2 Risk Warnings</h2>
+<div class="warning-box">
+  <strong>USE AT YOUR OWN RISK.</strong> This software is provided for educational purposes only.<br><br>
+  <ul>
+    <li><strong>Always test on a demo account first.</strong></li>
+    <li><strong>Never invest more than you can afford to lose.</strong></li>
+    <li><strong>Past performance does not guarantee future results.</strong></li>
+    <li><strong>Trading involves substantial risk of loss.</strong></li>
+    <li>The developers are not responsible for any financial losses.</li>
+  </ul>
+</div>
+
+<h2>14.3 License</h2>
+<p>MIT License - Use at your own risk.</p>
+
+<div class="footer-note" style="margin-top:60px; text-align:center;">
+  <p>Fibo 71 CP 2.0 Documentation | Version 2.0 | April 2026</p>
+  <p>Generated automatically from source code documentation.</p>
+</div>
+
+</body>
+</html>

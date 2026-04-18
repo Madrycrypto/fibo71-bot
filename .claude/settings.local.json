@@ -6,7 +6,15 @@
       "Bash(python:*)",
       "Bash(ls:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(pip3 list *)",
+      "Bash(npm list *)",
+      "Bash(brew list *)",
+      "Bash(brew install *)",
+      "Read(//Library/**)",
+      "Bash(mds.find \"kMDItemFSName == 'pdflatex'\")",
+      "Bash(pip3 install *)",
+      "Bash(find *)"
     ]
   }
 }
