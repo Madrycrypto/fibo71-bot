@@ -38,7 +38,6 @@ input bool   SetupExpiryEnabled = true;  // Enable Setup Expiry
 //--- Entry Positions (EP1/EP2/EP3)
 input group "=== Entry Positions ==="
 input int    PositionMode       = 1;       // Mode: 1=Single(71-79%), 2=Normal(EP1+EP2), 3=Aggressive(EP1+EP2+EP3)
-input double RiskPerPosition    = 0.5;     // Risk % per position (total risk = this * numPositions)
 
 //--- Trading Settings
 input group "=== Trading ==="
@@ -78,6 +77,19 @@ input string SessionEnd         = "20:00"; // Session end HH:MM (server time)
 input group "=== Weekend Close ==="
 input bool   EnableWeekendClose = false;   // Enable Friday Close + Block Weekend
 input string WeekendCloseTime   = "21:00"; // Friday close time HH:MM
+
+//--- ATR / Consolidation Filter
+input group "=== ATR Filter ==="
+input bool   EnableATRFilter    = false;   // Enable ATR Consolidation Filter
+input int    ATRLength          = 14;      // ATR Period
+input int    ATRSmooth          = 50;      // ATR Smoothing Period
+input double ATRThreshold       = 1.0;     // ATR Threshold Multiplier
+
+//--- Partial Close
+input group "=== Partial Close ==="
+input bool   EnablePartialClose = false;   // Enable Partial Close at TP1
+input double PartialClosePercent = 70.0;   // Close % of position at TP1
+input bool   PartialMoveSL      = true;    // Move SL to breakeven after partial
 
 //--- Display Settings
 input group "=== Display ==="
@@ -140,6 +152,8 @@ datetime g_lastBarTime  = 0;
 string   g_prefix = "F71_";
 int      g_dailyTrades = 0;
 datetime g_lastTradeDate = 0;
+int      g_htfHandle = INVALID_HANDLE;
+int      g_atrHandle = INVALID_HANDLE;
 
 //+------------------------------------------------------------------+
 //| Initialization                                                    |
@@ -155,6 +169,12 @@ int OnInit()
    ArrayResize(g_setups, 0);
    g_setupCounter = 0;
    g_dailyTrades = 0;
+
+   // Create indicator handles
+   if(EnableHTF)
+      g_htfHandle = iMA(_Symbol, HTFTimeframe, HTFEMA, 0, MODE_EMA, PRICE_CLOSE);
+   if(EnableATRFilter)
+      g_atrHandle = iATR(_Symbol, PERIOD_CURRENT, ATRLength);
 
    Print("============================================");
    Print("  Fibo 71 CP 2.0 Trading Bot v4.0");
@@ -179,6 +199,8 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    ObjectsDeleteAll(0, g_prefix);
+   if(g_htfHandle != INVALID_HANDLE) IndicatorRelease(g_htfHandle);
+   if(g_atrHandle != INVALID_HANDLE) IndicatorRelease(g_atrHandle);
    ChartRedraw(0);
    Print("=== Fibo 71 CP 2.0 Bot Stopped ===");
 }
@@ -250,6 +272,12 @@ void OnTick()
 
    // ---- STEP 10: Update info table ----
    UpdateInfoTable(total);
+
+   // ---- STEP 11: Manage existing positions ----
+   ExecuteDailyClose();
+   ExecuteWeekendClose();
+   ManageTrailingStop();
+   ManagePartialClose();
 
    ChartRedraw(0);
 }
@@ -390,8 +418,9 @@ void CheckExistingSetups(int total)
 
       if(isExpired)
       {
-         if(s.orderTicket > 0)
-            OrderCancelSafe(s.orderTicket, "Expired");
+         for(int t = 0; t < 3; t++)
+            if(s.orderTickets[t] > 0)
+               OrderCancelSafe(s.orderTickets[t], "Expired");
 
          DeleteSetupDrawings(s);
          s.hitBar    = idx;
@@ -418,8 +447,9 @@ void CheckExistingSetups(int total)
             s.hitBar    = idx;
             s.hitResult = 1;
 
-            if(s.orderTicket > 0)
-               OrderCancelSafe(s.orderTicket, "TP hit");
+            for(int t = 0; t < 3; t++)
+               if(s.orderTickets[t] > 0)
+                  OrderCancelSafe(s.orderTickets[t], "TP hit");
 
             if(ShowLabels)
             {
@@ -442,8 +472,9 @@ void CheckExistingSetups(int total)
             s.hitBar    = idx;
             s.hitResult = 2;
 
-            if(s.orderTicket > 0)
-               OrderCancelSafe(s.orderTicket, "SL hit");
+            for(int t = 0; t < 3; t++)
+               if(s.orderTickets[t] > 0)
+                  OrderCancelSafe(s.orderTickets[t], "SL hit");
 
             if(ShowLabels)
             {
@@ -471,7 +502,7 @@ void CheckExistingSetups(int total)
 void CreateSetup(bool isBullish, int total)
 {
    int idx = total - 1;
-   double range, fib0, fib100, fib236, fib382, fib50, fib618, fib71, fib79;
+   double range, fib0, fib100, fib236, fib382, fib50, fib618, fib786, fib71, fib79;
 
    if(!isBullish)
    {
@@ -521,8 +552,9 @@ void CreateSetup(bool isBullish, int total)
 
    while(ArraySize(g_setups) > MaxActiveSetups)
    {
-      if(g_setups[0].orderTicket > 0)
-         OrderCancelSafe(g_setups[0].orderTicket, "Max setups");
+      for(int t = 0; t < 3; t++)
+         if(g_setups[0].orderTickets[t] > 0)
+            OrderCancelSafe(g_setups[0].orderTickets[t], "Max setups");
       DeleteSetupDrawings(g_setups[0]);
       for(int i = 0; i < ArraySize(g_setups) - 1; i++)
          g_setups[i] = g_setups[i + 1];
@@ -729,15 +761,10 @@ void ExecuteWeekendClose()
 int GetHTFTrend()
 {
    if(!EnableHTF) return 0;
+   if(g_htfHandle == INVALID_HANDLE) return 0;
 
    double htfEma[];
-   int handle = iMA(_Symbol, HTFTimeframe, HTFEMA, 0, MODE_EMA, PRICE_CLOSE);
-   if(handle == INVALID_HANDLE) return 0;
-
-   CopyBuffer(handle, 0, 0, 2, htfEma);
-   IndicatorRelease(handle);
-
-   if(ArraySize(htfEma) < 1) return 0;
+   if(CopyBuffer(g_htfHandle, 0, 0, 2, htfEma) < 1) return 0;
 
    double htfClose = iClose(_Symbol, HTFTimeframe, 0);
    if(htfClose > htfEma[0]) return 1;   // Bullish
@@ -809,11 +836,172 @@ void ManageTrailingStop()
 }
 
 //+------------------------------------------------------------------+
+//| ATR / CONSOLIDATION FILTER                                        |
+//+------------------------------------------------------------------+
+bool IsATRActive()
+{
+   if(!EnableATRFilter) return true;
+   if(g_atrHandle == INVALID_HANDLE) return true;
+
+   double atrBuf[];
+   if(CopyBuffer(g_atrHandle, 0, 0, ATRSmooth + 1, atrBuf) < ATRSmooth + 1)
+      return true;
+
+   double currentATR = atrBuf[0];
+
+   // Calculate SMA of ATR for baseline
+   double baselineATR = 0;
+   for(int i = 0; i < ATRSmooth; i++)
+      baselineATR += atrBuf[i];
+   baselineATR /= ATRSmooth;
+
+   // Active = current ATR above baseline * threshold (expansion, not consolidation)
+   return (currentATR > baselineATR * ATRThreshold);
+}
+
+//+------------------------------------------------------------------+
+//| PARTIAL CLOSE                                                      |
+//+------------------------------------------------------------------+
+void ManagePartialClose()
+{
+   if(!EnablePartialClose) return;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double currentSL = PositionGetDouble(POSITION_SL);
+      double currentTP = PositionGetDouble(POSITION_TP);
+      double volume    = PositionGetDouble(POSITION_VOLUME);
+      string comment   = PositionGetString(POSITION_COMMENT);
+
+      // Only process positions that haven't been partially closed yet
+      if(StringFind(comment, "_PC") >= 0) continue;
+
+      // Calculate TP distance
+      double tpDistance = MathAbs(currentTP - openPrice);
+      if(tpDistance <= 0) continue;
+
+      // Check if price reached TP1 (first target = 70% of TP distance)
+      double tp1Level;
+      if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+      {
+         tp1Level = openPrice + tpDistance * 0.7;
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         if(bid < tp1Level) continue;
+
+         // Check minimum volume for partial close
+         double minVol = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+         double volStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         double closeVol = MathFloor(volume * PartialClosePercent / 100.0 / volStep) * volStep;
+         if(closeVol < minVol) continue;
+         if(volume - closeVol < minVol) continue;
+
+         // Partial close
+         MqlTradeRequest request = {};
+         MqlTradeResult  result  = {};
+         request.action   = TRADE_ACTION_DEAL;
+         request.symbol   = _Symbol;
+         request.volume   = NormalizeDouble(closeVol, 2);
+         request.type     = ORDER_TYPE_SELL;
+         request.deviation = Slippage;
+         request.position = ticket;
+         request.comment  = comment + "_PC";
+
+         if(OrderSend(request, result))
+         {
+            Print("Partial Close BUY: ", NormalizeDouble(closeVol, 2), " lots at TP1");
+
+            // Move SL to breakeven for remaining position
+            if(PartialMoveSL)
+            {
+               MqlTradeRequest slReq = {};
+               MqlTradeResult  slRes = {};
+               slReq.action   = TRADE_ACTION_SLTP;
+               slReq.position = ticket;
+               slReq.symbol   = _Symbol;
+               slReq.sl       = NormalizeDouble(openPrice, _Digits);
+               slReq.tp       = currentTP;
+               OrderSend(slReq, slRes);
+            }
+
+            SendTelegram("Fibo71: Partial Close on " + _Symbol +
+               "\nClosed " + DoubleToString(closeVol, 2) + " lots (TP1)" +
+               (PartialMoveSL ? "\nSL moved to breakeven" : ""));
+         }
+      }
+      else // SELL
+      {
+         tp1Level = openPrice - tpDistance * 0.7;
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         if(ask > tp1Level) continue;
+
+         double minVol = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+         double volStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         double closeVol = MathFloor(volume * PartialClosePercent / 100.0 / volStep) * volStep;
+         if(closeVol < minVol) continue;
+         if(volume - closeVol < minVol) continue;
+
+         MqlTradeRequest request = {};
+         MqlTradeResult  result  = {};
+         request.action   = TRADE_ACTION_DEAL;
+         request.symbol   = _Symbol;
+         request.volume   = NormalizeDouble(closeVol, 2);
+         request.type     = ORDER_TYPE_BUY;
+         request.deviation = Slippage;
+         request.position = ticket;
+         request.comment  = comment + "_PC";
+
+         if(OrderSend(request, result))
+         {
+            Print("Partial Close SELL: ", NormalizeDouble(closeVol, 2), " lots at TP1");
+
+            if(PartialMoveSL)
+            {
+               MqlTradeRequest slReq = {};
+               MqlTradeResult  slRes = {};
+               slReq.action   = TRADE_ACTION_SLTP;
+               slReq.position = ticket;
+               slReq.symbol   = _Symbol;
+               slReq.sl       = NormalizeDouble(openPrice, _Digits);
+               slReq.tp       = currentTP;
+               OrderSend(slReq, slRes);
+            }
+
+            SendTelegram("Fibo71: Partial Close on " + _Symbol +
+               "\nClosed " + DoubleToString(closeVol, 2) + " lots (TP1)" +
+               (PartialMoveSL ? "\nSL moved to breakeven" : ""));
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
 //| CHECK ENTRY ZONE & PLACE TRADE (EP1/EP2/EP3)                      |
 //+------------------------------------------------------------------+
+void CheckEntryZoneAndTrade(int total)
 {
    int idx = total - 1;
    double closePrice = iClose(_Symbol, PERIOD_CURRENT, idx);
+
+   // Session filter check
+   if(!IsSessionActive())
+      return;
+
+   // Weekend block
+   if(IsWeekendBlocked())
+      return;
+
+   // HTF trend check
+   int htfTrend = GetHTFTrend();
+
+   // ATR consolidation check
+   if(!IsATRActive())
+      return;
 
    for(int i = 0; i < ArraySize(g_setups); i++)
    {
@@ -821,150 +1009,272 @@ void ManageTrailingStop()
       if(s.hitBar >= 0) continue;
       if(s.traded) continue;
 
-      bool inZone = false;
-      if(s.isBullish)
-         inZone = (closePrice <= s.fib71 && closePrice >= s.fib79);
-      else
-         inZone = (closePrice >= s.fib79 && closePrice <= s.fib71);
-
-      if(!inZone) continue;
-
-      Print("Price in Entry Zone | ", _Symbol,
-            " | Price: ", DoubleToString(closePrice, _Digits));
-
-      // Check limits
-      if(g_dailyTrades >= MaxDailyTrades)
+      // HTF filter: skip if setup direction opposes HTF trend
+      if(EnableHTF && htfTrend != 0)
       {
-         Print("  Skip: daily limit (", g_dailyTrades, "/", MaxDailyTrades, ")");
-         continue;
-      }
-      int openPos = CountOpenPositions();
-      if(openPos >= MaxOpenPositions)
-      {
-         Print("  Skip: max positions (", openPos, "/", MaxOpenPositions, ")");
-         continue;
+         if(s.isBullish && htfTrend == -1) continue;
+         if(!s.isBullish && htfTrend == 1) continue;
       }
 
-      // Check pending order still exists
-      if(s.orderTicket > 0)
+      // Determine entry zone based on PositionMode
+      if(PositionMode == 1)
       {
-         if(OrderSelect(s.orderTicket))
-            continue;  // Order still active, skip
+         // Single mode: entry at 71-79% zone
+         bool inZone = false;
+         if(s.isBullish)
+            inZone = (closePrice <= s.fib71 && closePrice >= s.fib79);
          else
-            s.orderTicket = 0;  // Order gone, allow new trade
+            inZone = (closePrice >= s.fib79 && closePrice <= s.fib71);
+
+         if(!inZone) continue;
+
+         if(!CanTrade()) continue;
+         PlaceSingleOrder(s);
       }
-
-      // Calculate lot
-      double lot = CalculateLotSize(s.fib71, s.fib100);
-      if(lot <= 0)
+      else if(PositionMode == 2)
       {
-         Print("  Skip: invalid lot size");
-         continue;
+         // Normal mode: EP1 at 0.5, EP2 at 0.618
+         PlaceEP(s, 0.5, s.fib50, s.fib618, 1, closePrice);
+         PlaceEP(s, 0.618, s.fib618, s.fib786, 2, closePrice);
       }
-
-      // Place order
-      bool success = false;
-
-      if(PlacePendingOrders)
+      else if(PositionMode == 3)
       {
-         double entryPrice = s.isBullish ? s.fib79 : s.fib71;
-         ENUM_ORDER_TYPE orderType = s.isBullish ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+         // Aggressive mode: EP1 at 0.382, EP2 at 0.5, EP3 at 0.618
+         PlaceEP(s, 0.382, s.fib382, s.fib50, 1, closePrice);
+         PlaceEP(s, 0.5, s.fib50, s.fib618, 2, closePrice);
+         PlaceEP(s, 0.618, s.fib618, s.fib786, 3, closePrice);
+      }
+   }
+}
 
-         MqlTradeRequest request = {};
-         MqlTradeResult  result  = {};
+//+------------------------------------------------------------------+
+//| Check if trading is allowed (limits)                               |
+//+------------------------------------------------------------------+
+bool CanTrade()
+{
+   if(g_dailyTrades >= MaxDailyTrades) return false;
+   if(CountOpenPositions() >= MaxOpenPositions) return false;
+   return true;
+}
 
-         request.action    = TRADE_ACTION_PENDING;
-         request.symbol    = _Symbol;
-         request.volume    = lot;
-         request.type      = orderType;
-         request.price     = NormalizeDouble(entryPrice, _Digits);
-         request.sl        = NormalizeDouble(s.fib100, _Digits);
-         request.tp        = NormalizeDouble(s.fib0, _Digits);
-         request.deviation = Slippage;
-         request.magic     = MagicNumber;
-         request.comment   = "F71_" + s.objPrefix;
+//+------------------------------------------------------------------+
+//| Place single order at 71-79% zone (Mode 1)                        |
+//+------------------------------------------------------------------+
+void PlaceSingleOrder(SSetup &s)
+{
+   // Check if order already placed
+   if(s.orderTickets[0] > 0)
+   {
+      if(OrderSelect(s.orderTickets[0]))
+         return;
+      s.orderTickets[0] = 0;
+   }
 
-         if(OrderSend(request, result))
+   double lot = CalculateLotSize(s.fib71, s.fib100);
+   if(lot <= 0) return;
+
+   bool success = false;
+
+   if(PlacePendingOrders)
+   {
+      double entryPrice = s.isBullish ? s.fib79 : s.fib71;
+      ENUM_ORDER_TYPE orderType = s.isBullish ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+
+      request.action    = TRADE_ACTION_PENDING;
+      request.symbol    = _Symbol;
+      request.volume    = lot;
+      request.type      = orderType;
+      request.price     = NormalizeDouble(entryPrice, _Digits);
+      request.sl        = NormalizeDouble(s.fib100, _Digits);
+      request.tp        = NormalizeDouble(s.fib0, _Digits);
+      request.deviation = Slippage;
+      request.magic     = MagicNumber;
+      request.comment   = "F71_" + s.objPrefix;
+
+      if(OrderSend(request, result))
+      {
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
          {
-            if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+            s.orderTickets[0] = result.order;
+            success = true;
+
+            Print("  LIMIT ORDER: ", s.isBullish ? "BUY" : "SELL",
+                  " | Lot: ", lot,
+                  " | Entry: ", DoubleToString(entryPrice, _Digits),
+                  " | SL: ", DoubleToString(s.fib100, _Digits),
+                  " | TP: ", DoubleToString(s.fib0, _Digits));
+
+            if(ShowTradeLabels)
             {
-               s.orderTicket = result.order;
-               success = true;
-
-               Print("  LIMIT ORDER: ", s.isBullish ? "BUY" : "SELL",
-                     " | Lot: ", lot,
-                     " | Entry: ", DoubleToString(entryPrice, _Digits),
-                     " | SL: ", DoubleToString(s.fib100, _Digits),
-                     " | TP: ", DoubleToString(s.fib0, _Digits),
-                     " | Ticket: ", result.order);
-
-               if(ShowTradeLabels)
-               {
-                  string lblName = s.objPrefix + "Trade";
-                  string lblText = (s.isBullish ? "BUY LIMIT" : "SELL LIMIT") +
-                     StringFormat("\n%.2f lots", lot);
-                  ObjectCreate(0, lblName, OBJ_TEXT, 0,
-                               iTime(_Symbol, PERIOD_CURRENT, 0), entryPrice);
-                  ObjectSetString(0, lblName, OBJPROP_TEXT, lblText);
-                  ObjectSetInteger(0, lblName, OBJPROP_COLOR, s.isBullish ? clrLime : clrRed);
-                  ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
-               }
-
-               SendTelegram("Fibo71: Order on " + _Symbol +
-                  "\n" + (s.isBullish ? "BUY LIMIT" : "SELL LIMIT") + " " + DoubleToString(lot, 2) +
-                  "\nEntry: " + DoubleToString(entryPrice, _Digits) +
-                  "\nSL: " + DoubleToString(s.fib100, _Digits) +
-                  "\nTP: " + DoubleToString(s.fib0, _Digits));
+               string lblName = s.objPrefix + "Trade";
+               ObjectCreate(0, lblName, OBJ_TEXT, 0,
+                            iTime(_Symbol, PERIOD_CURRENT, 0), entryPrice);
+               ObjectSetString(0, lblName, OBJPROP_TEXT,
+                  (s.isBullish ? "BUY LIMIT" : "SELL LIMIT") + StringFormat("\n%.2f lots", lot));
+               ObjectSetInteger(0, lblName, OBJPROP_COLOR, s.isBullish ? clrLime : clrRed);
+               ObjectSetInteger(0, lblName, OBJPROP_FONTSIZE, 7);
             }
-            else
-               Print("  Order failed: retcode=", result.retcode, " | ", result.comment);
+
+            SendTelegram("Fibo71: Order on " + _Symbol +
+               "\n" + (s.isBullish ? "BUY LIMIT" : "SELL LIMIT") + " " + DoubleToString(lot, 2) +
+               "\nEntry: " + DoubleToString(entryPrice, _Digits) +
+               "\nSL: " + DoubleToString(s.fib100, _Digits) +
+               "\nTP: " + DoubleToString(s.fib0, _Digits));
          }
       }
-      else
+   }
+   else
+   {
+      ENUM_ORDER_TYPE orderType = s.isBullish ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+
+      request.action    = TRADE_ACTION_DEAL;
+      request.symbol    = _Symbol;
+      request.volume    = lot;
+      request.type      = orderType;
+      request.sl        = NormalizeDouble(s.fib100, _Digits);
+      request.tp        = NormalizeDouble(s.fib0, _Digits);
+      request.deviation = Slippage;
+      request.magic     = MagicNumber;
+      request.comment   = "F71_" + s.objPrefix;
+
+      if(OrderSend(request, result))
       {
-         // Market order
-         ENUM_ORDER_TYPE orderType = s.isBullish ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-
-         MqlTradeRequest request = {};
-         MqlTradeResult  result  = {};
-
-         request.action    = TRADE_ACTION_DEAL;
-         request.symbol    = _Symbol;
-         request.volume    = lot;
-         request.type      = orderType;
-         request.sl        = NormalizeDouble(s.fib100, _Digits);
-         request.tp        = NormalizeDouble(s.fib0, _Digits);
-         request.deviation = Slippage;
-         request.magic     = MagicNumber;
-         request.comment   = "F71_" + s.objPrefix;
-
-         if(OrderSend(request, result))
+         if(result.retcode == TRADE_RETCODE_DONE)
          {
-            if(result.retcode == TRADE_RETCODE_DONE)
-            {
-               success = true;
+            s.orderTickets[0] = result.order;
+            success = true;
 
-               Print("  MARKET ORDER: ", s.isBullish ? "BUY" : "SELL",
-                     " | Lot: ", lot,
-                     " | Price: ", DoubleToString(result.price, _Digits),
-                     " | SL: ", DoubleToString(s.fib100, _Digits),
-                     " | TP: ", DoubleToString(s.fib0, _Digits));
-
-               SendTelegram("Fibo71: Trade on " + _Symbol +
-                  "\n" + (s.isBullish ? "BUY" : "SELL") + " " + DoubleToString(lot, 2) +
-                  "\nPrice: " + DoubleToString(result.price, _Digits) +
-                  "\nSL: " + DoubleToString(s.fib100, _Digits) +
-                  "\nTP: " + DoubleToString(s.fib0, _Digits));
-            }
-            else
-               Print("  Order failed: retcode=", result.retcode);
+            Print("  MARKET ORDER: ", s.isBullish ? "BUY" : "SELL",
+                  " | Lot: ", lot,
+                  " | Price: ", DoubleToString(result.price, _Digits));
          }
       }
+   }
 
-      if(success)
+   if(success)
+   {
+      s.traded = true;
+      g_dailyTrades++;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Place EP order at specific Fibonacci level (Mode 2/3)              |
+//+------------------------------------------------------------------+
+void PlaceEP(SSetup &s, double fibLevel, double entryPrice, double slPrice,
+             int epIndex, double currentClose)
+{
+   // Check if this EP already placed
+   if(epIndex < 1 || epIndex > 3) return;
+   int ticketIdx = epIndex - 1;
+
+   if(s.orderTickets[ticketIdx] > 0)
+   {
+      if(OrderSelect(s.orderTickets[ticketIdx]))
+         return;
+      s.orderTickets[ticketIdx] = 0;
+   }
+
+   // Check if price is near entry level
+   double zone_width = MathAbs(s.fib100 - s.fib0) * 0.05;
+   bool nearLevel = false;
+   if(s.isBullish)
+      nearLevel = (currentClose <= entryPrice + zone_width && currentClose >= entryPrice - zone_width);
+   else
+      nearLevel = (currentClose >= entryPrice - zone_width && currentClose <= entryPrice + zone_width);
+
+   if(!nearLevel) return;
+   if(!CanTrade()) return;
+
+   // TP is the next higher Fib level (toward Fib0)
+   double tpPrice;
+   if(fibLevel == 0.382)
+      tpPrice = s.fib236;
+   else if(fibLevel == 0.5)
+      tpPrice = s.fib382;
+   else
+      tpPrice = s.fib50;
+
+   double lot = CalculateLotSize(entryPrice, slPrice);
+   if(lot <= 0) return;
+
+   string epLabel = "EP" + IntegerToString(epIndex);
+
+   if(PlacePendingOrders)
+   {
+      ENUM_ORDER_TYPE orderType = s.isBullish ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+
+      request.action    = TRADE_ACTION_PENDING;
+      request.symbol    = _Symbol;
+      request.volume    = lot;
+      request.type      = orderType;
+      request.price     = NormalizeDouble(entryPrice, _Digits);
+      request.sl        = NormalizeDouble(slPrice, _Digits);
+      request.tp        = NormalizeDouble(tpPrice, _Digits);
+      request.deviation = Slippage;
+      request.magic     = MagicNumber;
+      request.comment   = "F71_" + s.objPrefix + epLabel;
+
+      if(OrderSend(request, result))
       {
-         s.traded = true;
-         g_dailyTrades++;
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            s.orderTickets[ticketIdx] = result.order;
+            s.traded = true;
+            g_dailyTrades++;
+
+            Print("  ", epLabel, " LIMIT: ", s.isBullish ? "BUY" : "SELL",
+                  " | Lot: ", lot,
+                  " | Entry: ", DoubleToString(entryPrice, _Digits),
+                  " | SL: ", DoubleToString(slPrice, _Digits),
+                  " | TP: ", DoubleToString(tpPrice, _Digits));
+
+            SendTelegram("Fibo71: " + epLabel + " on " + _Symbol +
+               "\n" + (s.isBullish ? "BUY LIMIT" : "SELL LIMIT") + " " + DoubleToString(lot, 2) +
+               "\nEntry: " + DoubleToString(entryPrice, _Digits) +
+               "\nSL: " + DoubleToString(slPrice, _Digits) +
+               "\nTP: " + DoubleToString(tpPrice, _Digits));
+         }
+      }
+   }
+   else
+   {
+      ENUM_ORDER_TYPE orderType = s.isBullish ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+
+      MqlTradeRequest request = {};
+      MqlTradeResult  result  = {};
+
+      request.action    = TRADE_ACTION_DEAL;
+      request.symbol    = _Symbol;
+      request.volume    = lot;
+      request.type      = orderType;
+      request.sl        = NormalizeDouble(slPrice, _Digits);
+      request.tp        = NormalizeDouble(tpPrice, _Digits);
+      request.deviation = Slippage;
+      request.magic     = MagicNumber;
+      request.comment   = "F71_" + s.objPrefix + epLabel;
+
+      if(OrderSend(request, result))
+      {
+         if(result.retcode == TRADE_RETCODE_DONE)
+         {
+            s.orderTickets[ticketIdx] = result.order;
+            s.traded = true;
+            g_dailyTrades++;
+
+            Print("  ", epLabel, " MARKET: ", s.isBullish ? "BUY" : "SELL",
+                  " | Lot: ", lot,
+                  " | Price: ", DoubleToString(result.price, _Digits));
+         }
       }
    }
 }
@@ -1043,10 +1353,11 @@ void SendTelegram(string message)
    string params = "chat_id=" + TelegramChatId + "&text=" + message + "&parse_mode=HTML";
 
    char post[], result[];
-   string headers = "Content-Type: application/x-www-form-urlencoded\r\n";
+   string reqHeaders = "Content-Type: application/x-www-form-urlencoded\r\n";
+   string resHeaders = "";
    StringToCharArray(params, post, 0, StringLen(params));
 
-   int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+   int res = WebRequest("POST", url, reqHeaders, 5000, post, result, resHeaders);
    if(res != 200)
       Print("Telegram error: HTTP ", res);
 }

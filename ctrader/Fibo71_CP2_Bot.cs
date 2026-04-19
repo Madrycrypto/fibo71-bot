@@ -1,12 +1,12 @@
 // =====================================================================
 // Fibo71 CP 2.0 Bot - cTrader cBot
 // Exact replica of TradingView Pine Script indicator + trading
+// With full feature set: HTF, Session, ATR, Trailing, Weekend, etc.
 // =====================================================================
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 using cAlgo.API;
 using cAlgo.API.Indicators;
@@ -18,7 +18,7 @@ namespace Fibo71CP2
     public class Fibo71CP2Bot : Robot
     {
         // ═══════════════════════════════════════════════════════════════
-        // PARAMETERS (matching Pine Script exactly)
+        // PARAMETERS
         // ═══════════════════════════════════════════════════════════════
 
         // Fibonacci Settings
@@ -52,6 +52,90 @@ namespace Fibo71CP2
         [Parameter("Enable Setup Expiry", Group = "Setup Duration", DefaultValue = true)]
         public bool SetupExpiryEnabled { get; set; }
 
+        // Entry Positions
+        [Parameter("Position Mode", Group = "Entry Positions", DefaultValue = 1)]
+        public int PositionMode { get; set; }  // 1=Single, 2=Normal(EP1+EP2), 3=Aggressive(EP1+EP2+EP3)
+
+        // Trading
+        [Parameter("Risk %", Group = "Trading", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 5.0, Step = 0.1)]
+        public double RiskPercent { get; set; }
+
+        [Parameter("Enable Trading", Group = "Trading", DefaultValue = false)]
+        public bool EnableTrading { get; set; }
+
+        [Parameter("Max Daily Trades", Group = "Trading", DefaultValue = 3, MinValue = 1, MaxValue = 10)]
+        public int MaxDailyTrades { get; set; }
+
+        [Parameter("Max Open Positions", Group = "Trading", DefaultValue = 6, MinValue = 1, MaxValue = 20)]
+        public int MaxOpenPositions { get; set; }
+
+        // HTF Filter
+        [Parameter("Enable HTF Filter", Group = "HTF Filter", DefaultValue = false)]
+        public bool EnableHTF { get; set; }
+
+        [Parameter("HTF Timeframe", Group = "HTF Filter", DefaultValue = "Hourly")]
+        public TimeFrame HTFTimeframe { get; set; }
+
+        [Parameter("HTF EMA Period", Group = "HTF Filter", DefaultValue = 200, MinValue = 10, MaxValue = 500)]
+        public int HTFEMA { get; set; }
+
+        // Session Filter
+        [Parameter("Enable Session Filter", Group = "Session Filter", DefaultValue = false)]
+        public bool EnableSessionFilter { get; set; }
+
+        [Parameter("Session Start HH:MM", Group = "Session Filter", DefaultValue = "08:00")]
+        public string SessionStart { get; set; }
+
+        [Parameter("Session End HH:MM", Group = "Session Filter", DefaultValue = "20:00")]
+        public string SessionEnd { get; set; }
+
+        // ATR / Consolidation Filter
+        [Parameter("Enable ATR Filter", Group = "ATR Filter", DefaultValue = false)]
+        public bool EnableATRFilter { get; set; }
+
+        [Parameter("ATR Period", Group = "ATR Filter", DefaultValue = 14, MinValue = 5, MaxValue = 50)]
+        public int ATRLength { get; set; }
+
+        [Parameter("ATR Smoothing", Group = "ATR Filter", DefaultValue = 50, MinValue = 10, MaxValue = 200)]
+        public int ATRSmooth { get; set; }
+
+        [Parameter("ATR Threshold", Group = "ATR Filter", DefaultValue = 1.0, MinValue = 0.5, MaxValue = 3.0, Step = 0.1)]
+        public double ATRThreshold { get; set; }
+
+        // Trailing Stop
+        [Parameter("Enable Trailing Stop", Group = "Trailing Stop", DefaultValue = false)]
+        public bool EnableTrailingStop { get; set; }
+
+        [Parameter("Trail Start (pips)", Group = "Trailing Stop", DefaultValue = 20.0, MinValue = 1)]
+        public double TrailingStartPips { get; set; }
+
+        [Parameter("Trail Distance (pips)", Group = "Trailing Stop", DefaultValue = 15.0, MinValue = 1)]
+        public double TrailingStopPips { get; set; }
+
+        // Daily Auto-Close
+        [Parameter("Enable Daily Close", Group = "Daily Close", DefaultValue = false)]
+        public bool EnableDailyClose { get; set; }
+
+        [Parameter("Daily Close Time HH:MM", Group = "Daily Close", DefaultValue = "23:55")]
+        public string DailyCloseTime { get; set; }
+
+        // Weekend Close
+        [Parameter("Enable Weekend Close", Group = "Weekend Close", DefaultValue = false)]
+        public bool EnableWeekendClose { get; set; }
+
+        [Parameter("Friday Close Time HH:MM", Group = "Weekend Close", DefaultValue = "21:00")]
+        public string WeekendCloseTime { get; set; }
+
+        // Partial Close
+        [Parameter("Enable Partial Close", Group = "Partial Close", DefaultValue = false)]
+        public bool EnablePartialClose { get; set; }
+
+        [Parameter("Partial Close %", Group = "Partial Close", DefaultValue = 70.0, MinValue = 10, MaxValue = 90)]
+        public double PartialClosePercent { get; set; }
+
+        [Parameter("Move SL to BE After Partial", Group = "Partial Close", DefaultValue = true)]
+        public bool PartialMoveSL { get; set; }
+
         // Display
         [Parameter("Show Swing Points", Group = "Display", DefaultValue = true)]
         public bool ShowSwingPoints { get; set; }
@@ -67,16 +151,6 @@ namespace Fibo71CP2
 
         [Parameter("Max Active Setups", Group = "Display", DefaultValue = 5, MinValue = 1, MaxValue = 10)]
         public int MaxActiveSetups { get; set; }
-
-        // Trading
-        [Parameter("Risk %", Group = "Trading", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 5.0, Step = 0.1)]
-        public double RiskPercent { get; set; }
-
-        [Parameter("Enable Trading", Group = "Trading", DefaultValue = false)]
-        public bool EnableTrading { get; set; }
-
-        [Parameter("Max Daily Trades", Group = "Trading", DefaultValue = 3, MinValue = 1, MaxValue = 10)]
-        public int MaxDailyTrades { get; set; }
 
         // Telegram
         [Parameter("Enable Telegram", Group = "Telegram", DefaultValue = false)]
@@ -95,14 +169,15 @@ namespace Fibo71CP2
         private class Setup
         {
             public bool IsBullish;
-            public double Fib0, Fib236, Fib382, Fib50, Fib618, Fib100;
+            public double Fib0, Fib236, Fib382, Fib50, Fib618, Fib786, Fib100;
             public double Fib71, Fib79;
             public int CreatedBarIndex;
-            public int HitBarIndex;     // -1 = active
-            public int HitResult;       // 0=active, 1=TP, 2=SL, 3=expired
+            public int HitBarIndex = -1;
+            public int HitResult;  // 0=active, 1=TP, 2=SL, 3=expired
             public string SetupId;
+            public bool Traded;
+            public string[] TradeLabels = new string[3];
 
-            // Chart object IDs for removal
             public string LineFib0Id, LineFib100Id, LineFib50Id;
             public string LineFib71Id, LineFib79Id;
             public string ZoneId, BosLabelId, HitLabelId;
@@ -122,6 +197,8 @@ namespace Fibo71CP2
         private DateTime _lastTradeDate = DateTime.MinValue;
         private string _prefix = "F71_";
         private HttpClient _httpClient;
+        private AverageTrueRange _atrIndicator;
+        private HashSet<string> _partiallyClosed = new HashSet<string>();
 
         // ═══════════════════════════════════════════════════════════════
         // LIFECYCLE
@@ -137,6 +214,7 @@ namespace Fibo71CP2
             }
 
             _httpClient = EnableTelegram ? new HttpClient() : null;
+            _atrIndicator = Indicators.AverageTrueRange(ATRLength);
 
             Print("=== Fibo 71 CP 2.0 Bot Started ===");
             Print($"Symbol: {SymbolName} | TF: {TimeFrame}");
@@ -144,6 +222,10 @@ namespace Fibo71CP2
             Print($"BOS Lookback: {BOSLookback} | Swing: {SwingLookback}");
             Print($"Imbalance: {(EnableImbalance ? "ON" : "OFF")} | LiqSweep: {(EnableLiquiditySweep ? "ON" : "OFF")}");
             Print($"Trading: {(EnableTrading ? "ON" : "OFF")} | Risk: {RiskPercent}%");
+            Print($"HTF: {(EnableHTF ? "ON" : "OFF")} | Session: {(EnableSessionFilter ? "ON" : "OFF")}");
+            Print($"ATR: {(EnableATRFilter ? "ON" : "OFF")} | Trailing: {(EnableTrailingStop ? "ON" : "OFF")}");
+            Print($"Daily Close: {(EnableDailyClose ? "ON" : "OFF")} | Weekend: {(EnableWeekendClose ? "ON" : "OFF")}");
+            Print($"Partial Close: {(EnablePartialClose ? "ON" : "OFF")} | Position Mode: {PositionMode}");
         }
 
         protected override void OnBar()
@@ -151,7 +233,7 @@ namespace Fibo71CP2
             int count = Bars.Count;
             if (count < SwingLookback + 10) return;
 
-            int idx = count - 1; // Current closed bar
+            int idx = count - 1;
 
             // Reset daily trade counter
             if (Bars.LastBar.OpenTime.Date != _lastTradeDate.Date)
@@ -171,7 +253,7 @@ namespace Fibo71CP2
             bool bearishImbalance, bullishImbalance;
             DetectImbalance(idx, out bearishImbalance, out bullishImbalance);
 
-            // ---- STEP 4: Liquidity Sweep Detection (only when BOS detected) ----
+            // ---- STEP 4: Liquidity Sweep Detection ----
             bool bearishLiqSweep, bullishLiqSweep;
             DetectLiquiditySweep(idx, bearishBOS, bullishBOS, out bearishLiqSweep, out bullishLiqSweep);
 
@@ -189,32 +271,135 @@ namespace Fibo71CP2
 
             // ---- STEP 7: Create new setups ----
             if (newBearish)
-                CreateSetup(false, idx); // false = bearish
+                CreateSetup(false, idx);
 
             if (newBullish)
-                CreateSetup(true, idx);  // true = bullish
+                CreateSetup(true, idx);
 
             // ---- STEP 8: Draw swing points ----
             if (ShowSwingPoints)
                 DrawSwingPoints(idx);
 
-            // ---- STEP 9: Check entry zone ----
+            // ---- STEP 9: Check entry zone & trade ----
             CheckEntryZone(idx);
 
-            // ---- STEP 10: Update info table ----
+            // ---- STEP 10: Manage positions ----
+            ManageDailyClose();
+            ManageWeekendClose();
+            ManageTrailingStop();
+            ManagePartialClose();
+
+            // ---- STEP 11: Update info table ----
             UpdateInfoTable(idx);
         }
 
         protected override void OnStop()
         {
-            // Clean up all chart objects
             foreach (var s in _activeSetups)
                 DeleteSetupDrawings(s);
 
-            // Remove info table
             RemoveTableObjects();
-
+            _httpClient?.Dispose();
             Print("=== Fibo 71 CP 2.0 Bot Stopped ===");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // FILTER HELPERS
+        // ═══════════════════════════════════════════════════════════════
+
+        private bool IsSessionActive()
+        {
+            if (!EnableSessionFilter) return true;
+
+            var now = Server.Time;
+            int nowMinutes = now.Hour * 60 + now.Minute;
+            int startH, startM, endH, endM;
+            ParseTime(SessionStart, out startH, out startM);
+            ParseTime(SessionEnd, out endH, out endM);
+
+            int startMinutes = startH * 60 + startM;
+            int endMinutes = endH * 60 + endM;
+
+            if (startMinutes <= endMinutes)
+                return nowMinutes >= startMinutes && nowMinutes <= endMinutes;
+            else
+                return nowMinutes >= startMinutes || nowMinutes <= endMinutes;
+        }
+
+        private bool IsWeekendBlocked()
+        {
+            if (!EnableWeekendClose) return false;
+
+            var now = Server.Time;
+            if (now.DayOfWeek == DayOfWeek.Saturday) return true;
+            if (now.DayOfWeek == DayOfWeek.Sunday) return true;
+
+            if (now.DayOfWeek == DayOfWeek.Friday)
+            {
+                int closeH, closeM;
+                ParseTime(WeekendCloseTime, out closeH, out closeM);
+                if (now.Hour > closeH || (now.Hour == closeH && now.Minute >= closeM))
+                    return true;
+            }
+            return false;
+        }
+
+        private int GetHTFTrend()
+        {
+            if (!EnableHTF) return 0;
+
+            try
+            {
+                var htfBars = MarketData.GetBars(HTFTimeframe, SymbolName);
+                if (htfBars.Count < HTFEMA + 1) return 0;
+
+                // Calculate EMA on HTF bars
+                double k = 2.0 / (HTFEMA + 1);
+                double ema = 0;
+                int startIdx = Math.Max(0, htfBars.Count - HTFEMA - 10);
+                ema = htfBars.ClosePrices[startIdx];
+
+                for (int i = startIdx + 1; i < htfBars.Count; i++)
+                    ema = htfBars.ClosePrices[i] * k + ema * (1 - k);
+
+                double htfClose = htfBars.ClosePrices.LastValue;
+                if (htfClose > ema) return 1;   // Bullish
+                if (htfClose < ema) return -1;  // Bearish
+            }
+            catch { }
+
+            return 0;
+        }
+
+        private bool IsATRActive()
+        {
+            if (!EnableATRFilter) return true;
+            if (_atrIndicator == null) return true;
+
+            int count = Math.Min(ATRSmooth + 1, Bars.Count);
+            if (count < ATRSmooth) return true;
+
+            double currentATR = _atrIndicator.Result.LastValue;
+
+            // Calculate SMA baseline
+            double baseline = 0;
+            for (int i = 0; i < ATRSmooth && i < _atrIndicator.Result.Count; i++)
+                baseline += _atrIndicator.Result[_atrIndicator.Result.Count - 1 - i];
+            baseline /= Math.Min(ATRSmooth, _atrIndicator.Result.Count);
+
+            return currentATR > baseline * ATRThreshold;
+        }
+
+        private void ParseTime(string timeStr, out int hours, out int minutes)
+        {
+            hours = 0;
+            minutes = 0;
+            var parts = timeStr.Split(':');
+            if (parts.Length >= 2)
+            {
+                int.TryParse(parts[0], out hours);
+                int.TryParse(parts[1], out minutes);
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -259,7 +444,6 @@ namespace Fibo71CP2
 
             double close = Bars.ClosePrices[idx];
 
-            // Bearish: close < swingLow, swing 3-50 bars old
             if (_swingLow > 0 && close < _swingLow)
             {
                 int age = idx - _swingLowIdx;
@@ -267,7 +451,6 @@ namespace Fibo71CP2
                     bearishBOS = true;
             }
 
-            // Bullish: close > swingHigh, swing 3-50 bars old
             if (_swingHigh > 0 && close > _swingHigh)
             {
                 int age = idx - _swingHighIdx;
@@ -290,12 +473,10 @@ namespace Fibo71CP2
             double pipMult = Symbol.PipSize;
             double minGap = MinImbalancePips * pipMult;
 
-            // Bearish: low[2] > high (gap between bar 2 and current)
             if (Bars.LowPrices[idx - 2] > Bars.HighPrices[idx] &&
                 (Bars.LowPrices[idx - 2] - Bars.HighPrices[idx]) >= minGap)
                 bearishImbalance = true;
 
-            // Bullish: high[2] < low (gap between bar 2 and current)
             if (Bars.HighPrices[idx - 2] < Bars.LowPrices[idx] &&
                 (Bars.LowPrices[idx] - Bars.HighPrices[idx - 2]) >= minGap)
                 bullishImbalance = true;
@@ -305,9 +486,6 @@ namespace Fibo71CP2
         // LIQUIDITY SWEEP DETECTION
         // ═══════════════════════════════════════════════════════════════
 
-        // Pine Script: liquidity sweep is ONLY checked when BOS is detected
-        // if bearishBOS -> check high[i] > swingHigh && close[i] < swingHigh
-        // if bullishBOS -> check low[i] < swingLow && close[i] > swingLow
         private void DetectLiquiditySweep(int idx, bool bearishBOS, bool bullishBOS,
                                           out bool bearishLiqSweep, out bool bullishLiqSweep)
         {
@@ -316,7 +494,6 @@ namespace Fibo71CP2
 
             int lookback = 5;
 
-            // Only check bearish sweep when bearish BOS is detected
             if (bearishBOS && _swingHigh > 0)
             {
                 for (int i = 1; i <= lookback; i++)
@@ -331,7 +508,6 @@ namespace Fibo71CP2
                 }
             }
 
-            // Only check bullish sweep when bullish BOS is detected
             if (bullishBOS && _swingLow > 0)
             {
                 for (int i = 1; i <= lookback; i++)
@@ -358,9 +534,8 @@ namespace Fibo71CP2
 
             foreach (var s in _activeSetups)
             {
-                if (s.HitBarIndex >= 0) continue; // Skip inactive
+                if (s.HitBarIndex >= 0) continue;
 
-                // Check expiry
                 bool isExpired = SetupExpiryEnabled &&
                                  (idx - s.CreatedBarIndex >= SetupExpiryBars);
 
@@ -368,7 +543,7 @@ namespace Fibo71CP2
                 {
                     DeleteSetupDrawings(s);
                     s.HitBarIndex = idx;
-                    s.HitResult = 3; // expired
+                    s.HitResult = 3;
 
                     if (ShowLabels)
                     {
@@ -380,15 +555,13 @@ namespace Fibo71CP2
                 }
                 else
                 {
-                    // TP check
                     bool hitTP = s.IsBullish ? (low <= s.Fib0) : (high >= s.Fib0);
-                    // SL check
                     bool hitSL = s.IsBullish ? (high >= s.Fib100) : (low <= s.Fib100);
 
                     if (hitTP)
                     {
                         s.HitBarIndex = idx;
-                        s.HitResult = 1; // TP
+                        s.HitResult = 1;
 
                         if (ShowLabels)
                         {
@@ -404,7 +577,7 @@ namespace Fibo71CP2
                     else if (hitSL)
                     {
                         s.HitBarIndex = idx;
-                        s.HitResult = 2; // SL
+                        s.HitResult = 2;
 
                         if (ShowLabels)
                         {
@@ -428,29 +601,27 @@ namespace Fibo71CP2
         private void CreateSetup(bool isBullish, int idx)
         {
             double range = _swingHigh - _swingLow;
-            double fib0, fib100, fib236, fib382, fib50, fib618, fib71, fib79;
+            double fib0, fib100, fib236, fib382, fib50, fib618, fib786, fib71, fib79;
 
             if (!isBullish)
             {
-                // Bearish: TP=swingLow, SL=swingHigh
-                fib0 = _swingLow;
-                fib100 = _swingHigh;
+                fib0 = _swingLow; fib100 = _swingHigh;
                 fib236 = _swingLow + range * 0.236;
                 fib382 = _swingLow + range * 0.382;
                 fib50 = _swingLow + range * 0.5;
                 fib618 = _swingLow + range * 0.618;
+                fib786 = _swingLow + range * 0.786;
                 fib71 = _swingLow + range * FibEntryMin;
                 fib79 = _swingLow + range * FibEntryMax;
             }
             else
             {
-                // Bullish: TP=swingHigh, SL=swingLow
-                fib0 = _swingHigh;
-                fib100 = _swingLow;
+                fib0 = _swingHigh; fib100 = _swingLow;
                 fib236 = _swingHigh - range * 0.236;
                 fib382 = _swingHigh - range * 0.382;
                 fib50 = _swingHigh - range * 0.5;
                 fib618 = _swingHigh - range * 0.618;
+                fib786 = _swingHigh - range * 0.786;
                 fib71 = _swingHigh - range * FibEntryMin;
                 fib79 = _swingHigh - range * FibEntryMax;
             }
@@ -458,36 +629,26 @@ namespace Fibo71CP2
             var s = new Setup
             {
                 IsBullish = isBullish,
-                Fib0 = fib0,
-                Fib236 = fib236,
-                Fib382 = fib382,
-                Fib50 = fib50,
-                Fib618 = fib618,
-                Fib100 = fib100,
-                Fib71 = fib71,
-                Fib79 = fib79,
+                Fib0 = fib0, Fib236 = fib236, Fib382 = fib382,
+                Fib50 = fib50, Fib618 = fib618, Fib786 = fib786,
+                Fib100 = fib100, Fib71 = fib71, Fib79 = fib79,
                 CreatedBarIndex = idx,
                 HitBarIndex = -1,
                 HitResult = 0,
-                SetupId = _setupCounter.ToString()
+                SetupId = _setupCounter.ToString(),
+                Traded = false
             };
             _setupCounter++;
 
-            // Draw setup
             CreateSetupDrawings(s);
-
-            // Add to list
             _activeSetups.Add(s);
 
-            // Limit active setups
             while (_activeSetups.Count > MaxActiveSetups)
             {
-                var old = _activeSetups[0];
-                DeleteSetupDrawings(old);
+                DeleteSetupDrawings(_activeSetups[0]);
                 _activeSetups.RemoveAt(0);
             }
 
-            // Alert
             string dir = isBullish ? "BULLISH" : "BEARISH";
             string entryZone = isBullish
                 ? $"{fib79:F5} - {fib71:F5}"
@@ -499,39 +660,308 @@ namespace Fibo71CP2
             Print($"  Entry Zone: {entryZone}");
             Print($"  SL (100%): {fib100:F5}");
 
-            // Telegram notification
             SendTelegram($"Fibo71: {dir} BOS on {SymbolName}\n"
-                       + $"Entry Zone: {entryZone}\n"
+                       + $"Entry: {entryZone}\n"
                        + $"TP: {fib0:F5} | SL: {fib100:F5}");
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // DRAWING: CREATE SETUP VISUALS
+        // CHECK ENTRY ZONE
+        // ═══════════════════════════════════════════════════════════════
+
+        private void CheckEntryZone(int idx)
+        {
+            // Pre-filters
+            if (!IsSessionActive()) return;
+            if (IsWeekendBlocked()) return;
+            if (!IsATRActive()) return;
+
+            int htfTrend = GetHTFTrend();
+            double close = Bars.ClosePrices[idx];
+
+            foreach (var s in _activeSetups)
+            {
+                if (s.HitBarIndex >= 0) continue;
+                if (s.Traded) continue;
+
+                // HTF filter
+                if (EnableHTF && htfTrend != 0)
+                {
+                    if (s.IsBullish && htfTrend == -1) continue;
+                    if (!s.IsBullish && htfTrend == 1) continue;
+                }
+
+                if (PositionMode == 1)
+                {
+                    // Single: entry at 71-79% zone
+                    bool inZone = s.IsBullish
+                        ? (close <= s.Fib71 && close >= s.Fib79)
+                        : (close >= s.Fib79 && close <= s.Fib71);
+
+                    if (inZone && EnableTrading && _dailyTrades < MaxDailyTrades
+                        && CountOpenPositions() < MaxOpenPositions)
+                        TryPlaceTrade(s, s.Fib71, s.Fib100, s.Fib0, "S", 0);
+                }
+                else if (PositionMode == 2)
+                {
+                    // Normal: EP1 at 0.5, EP2 at 0.618
+                    double zone_width = Math.Abs(s.Fib100 - s.Fib0) * 0.05;
+                    TryPlaceEP(s, s.Fib50, s.Fib618, s.Fib382, "EP1", 0, close, zone_width);
+                    TryPlaceEP(s, s.Fib618, s.Fib786, s.Fib50, "EP2", 1, close, zone_width);
+                }
+                else if (PositionMode == 3)
+                {
+                    // Aggressive: EP1 at 0.382, EP2 at 0.5, EP3 at 0.618
+                    double zone_width = Math.Abs(s.Fib100 - s.Fib0) * 0.05;
+                    TryPlaceEP(s, s.Fib382, s.Fib50, s.Fib236, "EP1", 0, close, zone_width);
+                    TryPlaceEP(s, s.Fib50, s.Fib618, s.Fib382, "EP2", 1, close, zone_width);
+                    TryPlaceEP(s, s.Fib618, s.Fib786, s.Fib50, "EP3", 2, close, zone_width);
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // TRADING
+        // ═══════════════════════════════════════════════════════════════
+
+        private void TryPlaceTrade(Setup s, double entryLevel, double slLevel, double tpLevel, string label, int ticketIdx)
+        {
+            var labelFull = "F71_" + s.SetupId + "_" + label;
+            var existing = Positions.FirstOrDefault(p =>
+                p.Label == labelFull && p.SymbolName == SymbolName);
+            if (existing != null) return;
+
+            double slDistance = Math.Abs(slLevel - entryLevel);
+            if (slDistance <= 0) return;
+
+            double riskAmount = Account.Balance * RiskPercent / 100.0;
+            double lotSize = riskAmount / (slDistance / Symbol.PipSize * Symbol.PipValue);
+            lotSize = Symbol.NormalizeVolumeInUnits(lotSize, RoundingMode.ToNearest);
+
+            if (lotSize < Symbol.VolumeInUnitsMin) return;
+
+            TradeType direction = s.IsBullish ? TradeType.Buy : TradeType.Sell;
+
+            var result = ExecuteMarketOrder(direction, SymbolName, lotSize,
+                labelFull, slLevel, tpLevel);
+
+            if (result.IsSuccessful)
+            {
+                s.Traded = true;
+                s.TradeLabels[ticketIdx] = labelFull;
+                _dailyTrades++;
+
+                Print($"Trade opened | {(s.IsBullish ? "BUY" : "SELL")} | "
+                    + $"Lot: {lotSize} | Label: {labelFull} | "
+                    + $"SL: {slLevel:F5} | TP: {tpLevel:F5}");
+
+                SendTelegram($"Fibo71: Trade on {SymbolName}\n"
+                           + $"{(s.IsBullish ? "BUY" : "SELL")} {lotSize}\n"
+                           + $"SL: {slLevel:F5} | TP: {tpLevel:F5}");
+            }
+        }
+
+        private void TryPlaceEP(Setup s, double entryPrice, double slPrice, double tpPrice,
+                                string epLabel, int ticketIdx, double currentClose, double zoneWidth)
+        {
+            if (s.TradeLabels[ticketIdx] != null) return;
+
+            // Check if price is near entry level
+            bool nearLevel = Math.Abs(currentClose - entryPrice) <= zoneWidth;
+            if (!nearLevel) return;
+            if (!EnableTrading) return;
+            if (_dailyTrades >= MaxDailyTrades) return;
+            if (CountOpenPositions() >= MaxOpenPositions) return;
+
+            TryPlaceTrade(s, entryPrice, slPrice, tpPrice, epLabel, ticketIdx);
+        }
+
+        private int CountOpenPositions()
+        {
+            return Positions.Count(p =>
+                p.Label.StartsWith("F71_") && p.SymbolName == SymbolName);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // DAILY AUTO-CLOSE
+        // ═══════════════════════════════════════════════════════════════
+
+        private void ManageDailyClose()
+        {
+            if (!EnableDailyClose) return;
+
+            int closeH, closeM;
+            ParseTime(DailyCloseTime, out closeH, out closeM);
+
+            var now = Server.Time;
+            if (now.Hour != closeH || now.Minute != closeM) return;
+
+            CloseAllBotPositions("Daily Close");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // WEEKEND CLOSE
+        // ═══════════════════════════════════════════════════════════════
+
+        private void ManageWeekendClose()
+        {
+            if (!EnableWeekendClose) return;
+
+            var now = Server.Time;
+            if (now.DayOfWeek != DayOfWeek.Friday) return;
+
+            int closeH, closeM;
+            ParseTime(WeekendCloseTime, out closeH, out closeM);
+
+            if (now.Hour == closeH && now.Minute == closeM)
+                CloseAllBotPositions("Weekend Close");
+        }
+
+        private void CloseAllBotPositions(string reason)
+        {
+            int count = 0;
+            foreach (var pos in Positions.Where(p =>
+                p.Label.StartsWith("F71_") && p.SymbolName == SymbolName).ToList())
+            {
+                ClosePosition(pos);
+                count++;
+            }
+
+            // Cancel pending orders
+            foreach (var order in PendingOrders.Where(o =>
+                o.Label.StartsWith("F71_") && o.Symbol == SymbolName).ToList())
+            {
+                CancelPendingOrder(order);
+            }
+
+            if (count > 0)
+            {
+                Print($"{reason}: closed {count} positions");
+                SendTelegram($"Fibo71: {reason} on {SymbolName}\nClosed {count} positions");
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // TRAILING STOP
+        // ═══════════════════════════════════════════════════════════════
+
+        private void ManageTrailingStop()
+        {
+            if (!EnableTrailingStop) return;
+
+            double trailStart = TrailingStartPips * Symbol.PipSize;
+            double trailDist = TrailingStopPips * Symbol.PipSize;
+
+            foreach (var pos in Positions.Where(p =>
+                p.Label.StartsWith("F71_") && p.SymbolName == SymbolName).ToList())
+            {
+                if (pos.TradeType == TradeType.Buy)
+                {
+                    double profit = Symbol.Bid - pos.EntryPrice;
+                    if (profit >= trailStart)
+                    {
+                        double newSL = Symbol.NormalizePrice(Symbol.Bid - trailDist);
+                        if (newSL > pos.StopLoss || pos.StopLoss == 0)
+                            ModifyPosition(pos, newSL, pos.TakeProfit);
+                    }
+                }
+                else
+                {
+                    double profit = pos.EntryPrice - Symbol.Ask;
+                    if (profit >= trailStart)
+                    {
+                        double newSL = Symbol.NormalizePrice(Symbol.Ask + trailDist);
+                        if (newSL < pos.StopLoss || pos.StopLoss == 0)
+                            ModifyPosition(pos, newSL, pos.TakeProfit);
+                    }
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PARTIAL CLOSE
+        // ═══════════════════════════════════════════════════════════════
+
+        private void ManagePartialClose()
+        {
+            if (!EnablePartialClose) return;
+
+            foreach (var pos in Positions.Where(p =>
+                p.Label.StartsWith("F71_") && p.SymbolName == SymbolName).ToList())
+            {
+                if (_partiallyClosed.Contains(pos.Label)) continue;
+
+                double tpDistance = Math.Abs(pos.TakeProfit - pos.EntryPrice);
+                if (tpDistance <= 0) continue;
+
+                // Check if price reached 70% of TP distance
+                double tp1Level;
+                bool reachedTP1;
+
+                if (pos.TradeType == TradeType.Buy)
+                {
+                    tp1Level = pos.EntryPrice + tpDistance * 0.7;
+                    reachedTP1 = Symbol.Bid >= tp1Level;
+                }
+                else
+                {
+                    tp1Level = pos.EntryPrice - tpDistance * 0.7;
+                    reachedTP1 = Symbol.Ask <= tp1Level;
+                }
+
+                if (!reachedTP1) continue;
+
+                // Calculate partial volume
+                double closeVol = Math.Floor(pos.VolumeInUnits * PartialClosePercent / 100.0
+                    / Symbol.VolumeInUnitsStep) * Symbol.VolumeInUnitsStep;
+
+                if (closeVol < Symbol.VolumeInUnitsMin) continue;
+                if (pos.VolumeInUnits - closeVol < Symbol.VolumeInUnitsMin) continue;
+
+                // Partial close
+                var closeVolume = Symbol.NormalizeVolumeInUnits(closeVol, RoundingMode.ToNearest);
+                var result = ClosePositionPartial(pos, closeVolume);
+
+                if (result.IsSuccessful)
+                {
+                    _partiallyClosed.Add(pos.Label);
+                    Print($"Partial Close: {closeVol} units at TP1 | {pos.Label}");
+
+                    // Move SL to breakeven
+                    if (PartialMoveSL)
+                    {
+                        ModifyPosition(pos, Symbol.NormalizePrice(pos.EntryPrice), pos.TakeProfit);
+                    }
+
+                    SendTelegram($"Fibo71: Partial Close on {SymbolName}\n"
+                               + $"Closed {PartialClosePercent}% at TP1"
+                               + (PartialMoveSL ? "\nSL moved to breakeven" : ""));
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // DRAWING
         // ═══════════════════════════════════════════════════════════════
 
         private void CreateSetupDrawings(Setup s)
         {
             DateTime createTime = Bars.OpenTimes[s.CreatedBarIndex];
-            // Extend lines far into the future
             DateTime futureTime = createTime.AddTicks(TimeFrame.ToTimeSpan().Ticks * SetupExpiryBars);
-
             string sid = s.SetupId;
 
             if (ShowFibLines)
             {
-                // Fib0 (TP) - lime, thick
                 s.LineFib0Id = MakeId(sid, "Fib0");
                 Chart.DrawTrendLine(s.LineFib0Id,
                     createTime, s.Fib0, futureTime, s.Fib0,
                     Color.Lime, 2, LineStyle.Solid);
 
-                // Fib100 (SL) - red, thick
                 s.LineFib100Id = MakeId(sid, "Fib100");
                 Chart.DrawTrendLine(s.LineFib100Id,
                     createTime, s.Fib100, futureTime, s.Fib100,
                     Color.Red, 2, LineStyle.Solid);
 
-                // Fib50 - blue, thin
                 s.LineFib50Id = MakeId(sid, "Fib50");
                 Chart.DrawTrendLine(s.LineFib50Id,
                     createTime, s.Fib50, futureTime, s.Fib50,
@@ -539,22 +969,19 @@ namespace Fibo71CP2
 
                 if (ShowEntryZone)
                 {
-                    // Fib71 - dotted blue
                     s.LineFib71Id = MakeId(sid, "Fib71");
                     Chart.DrawTrendLine(s.LineFib71Id,
                         createTime, s.Fib71, futureTime, s.Fib71,
                         Color.FromArgb(127, 30, 144, 255), 1, LineStyle.Lines);
 
-                    // Fib79 - dotted blue
                     s.LineFib79Id = MakeId(sid, "Fib79");
                     Chart.DrawTrendLine(s.LineFib79Id,
                         createTime, s.Fib79, futureTime, s.Fib79,
                         Color.FromArgb(127, 30, 144, 255), 1, LineStyle.Lines);
 
-                    // Entry zone box
                     var zoneColor = s.IsBullish
-                        ? Color.FromArgb(25, 0, 128, 0)    // green 10% opacity
-                        : Color.FromArgb(25, 255, 0, 0);   // red 10% opacity
+                        ? Color.FromArgb(25, 0, 128, 0)
+                        : Color.FromArgb(25, 255, 0, 0);
 
                     s.ZoneId = MakeId(sid, "Zone");
                     Chart.DrawRectangle(s.ZoneId,
@@ -571,22 +998,16 @@ namespace Fibo71CP2
                     : $"BEARISH BOS\nTP: {s.Fib0:F5}\nEntry: {s.Fib71:F5} - {s.Fib79:F5}\nSL: {s.Fib100:F5}";
 
                 var lblColor = s.IsBullish
-                    ? Color.FromArgb(178, 0, 255, 0)   // green 70%
-                    : Color.FromArgb(178, 255, 0, 0);   // red 70%
+                    ? Color.FromArgb(178, 0, 255, 0)
+                    : Color.FromArgb(178, 255, 0, 0);
 
                 Chart.DrawText(s.BosLabelId, labelText,
                     createTime, s.Fib100, lblColor);
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // DRAWING: DELETE SETUP VISUALS
-        // ═══════════════════════════════════════════════════════════════
-
         private void DeleteSetupDrawings(Setup s)
         {
-            string sid = s.SetupId;
-
             TryRemove(s.LineFib0Id);
             TryRemove(s.LineFib100Id);
             TryRemove(s.LineFib50Id);
@@ -596,16 +1017,6 @@ namespace Fibo71CP2
             TryRemove(s.BosLabelId);
             TryRemove(s.HitLabelId);
         }
-
-        private void TryRemove(string id)
-        {
-            if (!string.IsNullOrEmpty(id))
-                Chart.RemoveObject(id);
-        }
-
-        // ═══════════════════════════════════════════════════════════════
-        // DRAWING: SWING POINTS
-        // ═══════════════════════════════════════════════════════════════
 
         private void DrawSwingPoints(int idx)
         {
@@ -639,76 +1050,7 @@ namespace Fibo71CP2
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // CHECK ENTRY ZONE
-        // ═══════════════════════════════════════════════════════════════
-
-        private void CheckEntryZone(int idx)
-        {
-            double close = Bars.ClosePrices[idx];
-
-            foreach (var s in _activeSetups)
-            {
-                if (s.HitBarIndex >= 0) continue;
-
-                bool inZone = s.IsBullish
-                    ? (close <= s.Fib71 && close >= s.Fib79)
-                    : (close >= s.Fib79 && close <= s.Fib71);
-
-                if (inZone)
-                {
-                    Print($"Price in Entry Zone | {SymbolName} | Price: {close:F5}");
-
-                    // Trading: place order when price enters zone
-                    if (EnableTrading && _dailyTrades < MaxDailyTrades)
-                    {
-                        TryPlaceTrade(s);
-                    }
-                }
-            }
-        }
-
-        // ═══════════════════════════════════════════════════════════════
-        // TRADING
-        // ═══════════════════════════════════════════════════════════════
-
-        private void TryPlaceTrade(Setup s)
-        {
-            // Check if we already have a position for this setup
-            var existing = Positions.FirstOrDefault(p =>
-                p.Label == "F71_" + s.SetupId && p.SymbolName == SymbolName);
-            if (existing != null) return;
-
-            // Calculate lot size
-            double slDistance = Math.Abs(s.Fib100 - s.Fib71);
-            if (slDistance <= 0) return;
-
-            double riskAmount = Account.Balance * RiskPercent / 100.0;
-            double lotSize = riskAmount / (slDistance / Symbol.PipSize * Symbol.PipValue);
-            lotSize = Symbol.NormalizeVolumeInUnits(lotSize, RoundingMode.ToNearest);
-
-            if (lotSize < Symbol.VolumeInUnitsMin) return;
-
-            TradeType direction = s.IsBullish ? TradeType.Buy : TradeType.Sell;
-            double entry = s.IsBullish ? s.Fib71 : s.Fib79;
-
-            var result = ExecuteMarketOrder(direction, SymbolName, lotSize,
-                "F71_" + s.SetupId, s.Fib100, s.Fib0);
-
-            if (result.IsSuccessful)
-            {
-                _dailyTrades++;
-                Print($"Trade opened | {(s.IsBullish ? "BUY" : "SELL")} | "
-                    + $"Lot: {lotSize} | Entry: {entry:F5} | "
-                    + $"SL: {s.Fib100:F5} | TP: {s.Fib0:F5}");
-
-                SendTelegram($"Fibo71: Trade opened on {SymbolName}\n"
-                           + $"{(s.IsBullish ? "BUY" : "SELL")} {lotSize}\n"
-                           + $"SL: {s.Fib100:F5} | TP: {s.Fib0:F5}");
-            }
-        }
-
-        // ═══════════════════════════════════════════════════════════════
-        // INFO TABLE (top-right corner display)
+        // INFO TABLE
         // ═══════════════════════════════════════════════════════════════
 
         private void UpdateInfoTable(int idx)
@@ -727,7 +1069,6 @@ namespace Fibo71CP2
                 }
             }
 
-            // Draw status text near top of chart
             string tblId = _prefix + "TBL";
 
             if (lastActive == null)
@@ -758,7 +1099,6 @@ namespace Fibo71CP2
                 + $"Active Setups: {activeBullish + activeBearish}/{MaxActiveSetups}"
                 + expiry;
 
-            // Draw at a fixed position above the last bar
             double topPrice = lastActive.IsBullish ? lastActive.Fib0 : lastActive.Fib100;
             topPrice += (lastActive.Fib100 - lastActive.Fib0) * 0.15;
 
@@ -770,6 +1110,12 @@ namespace Fibo71CP2
         private void RemoveTableObjects()
         {
             TryRemove(_prefix + "TBL");
+        }
+
+        private void TryRemove(string id)
+        {
+            if (!string.IsNullOrEmpty(id))
+                Chart.RemoveObject(id);
         }
 
         // ═══════════════════════════════════════════════════════════════
